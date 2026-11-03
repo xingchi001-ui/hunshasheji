@@ -1,0 +1,54 @@
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from PySide6.QtWidgets import QApplication
+from main import MainWindow, ProjectDB, default_config, read_raw_image
+
+app = QApplication.instance() or QApplication([])
+with tempfile.TemporaryDirectory() as td:
+    db = ProjectDB(Path(td) / "test.db")
+    assert (Path(td) / "test.db").exists()
+    with db.connect() as c:
+        names = {row[0] for row in c.execute("select name from sqlite_master where type='table'")}
+    assert {"projects", "reference_assets", "generation_runs"}.issubset(names)
+
+win = MainWindow()
+assert win.tabs.count() == 5
+assert win.vision_model.currentText() == "MiniMax-M3.1"
+assert win.text_model.currentText() == "deepseek-v4.1-flash"
+assert win.image_model.currentText() == "gpt-image-2.5"
+win.silhouette.setCurrentText("鱼尾")
+win.fabric.setCurrentText("亮片")
+win.refresh_parameter_json()
+assert '"silhouette": "鱼尾"' in win.parameter_json.toPlainText()
+assert win.parameters()["measurements"]["waist_cm"] == 64.0
+win.analysis_output.setPlainText('{"主题":"午夜花园"}')
+win.plan_output.setPlainText("鱼尾礼服设计方案：黑金缎面与珠绣。")
+assert "午夜花园" in win.image_prompt()
+assert "鱼尾" in win.image_prompt()
+assert "gpt-image-2.5" in default_config()["image_model"]
+
+with tempfile.TemporaryDirectory() as td:
+    # Original bytes are read for API transport only; no image decoding or processing.
+    sample = Path(td) / "reference.png"
+    sample.write_bytes(b"\x89PNG\r\n\x1a\nraw-test")
+    mime, encoded = read_raw_image(sample)
+    assert mime == "image/png"
+    import base64
+    assert base64.b64decode(encoded) == sample.read_bytes()
+
+source = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
+for token in ["/chat/completions", "/images/generations", "/images/edits", "image[]", "qwen3.7-plus", "gpt-image-2.5"]:
+    assert token in source
+assert 'self.start_chat([{"role": "user", "content": parts}], self.analysis_done, self.config.get("vision_model")' in source
+assert 'max_completion_tokens": 8000' in source
+assert 'finish_reason=' in source and '推理字段长度=' in source
+assert 'reasoning_effort' in source and 'model_key' in source
+assert "PIL" not in source and "cv2" not in source and "Image.open" not in source
+bat = (Path(__file__).resolve().parents[1] / "build.bat").read_text(encoding="utf-8")
+assert all(ord(c) < 128 for c in bat)
+print("FULLCHAIN_REGRESSION_OK")
