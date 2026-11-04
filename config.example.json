@@ -4,5 +4,6 @@
   "vision_model": "MiniMax-M3.1",
   "text_model": "deepseek-v4.1-flash",
   "image_model": "gpt-image-2.5",
-  "timeout_seconds": 60
+  "timeout_seconds": 60,
+  "dress_training_data": "data/dress_training/segments.jsonl"
 }

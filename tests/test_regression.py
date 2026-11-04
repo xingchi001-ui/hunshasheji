@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import json
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -15,6 +16,17 @@ with tempfile.TemporaryDirectory() as td:
     with db.connect() as c:
         names = {row[0] for row in c.execute("select name from sqlite_master where type='table'")}
     assert {"projects", "reference_assets", "generation_runs"}.issubset(names)
+    sample_data = Path(td) / "segments.jsonl"
+    sample_data.write_text(json.dumps({
+        "id": "book:p0001:s0001", "book_id": "book", "page": 1,
+        "text": "鱼尾礼服可通过腰部收省形成贴体廓形。",
+        "source": {"ocr_confidence": 0.99},
+        "knowledge": {"silhouette": ["鱼尾"], "construction": ["省道"]},
+        "review": {"needs_human_check": False}
+    }, ensure_ascii=False) + "\n", encoding="utf-8")
+    assert db.import_dress_training_data(sample_data) == 1
+    matches = db.search_dress_knowledge("鱼尾", limit=3)
+    assert matches and matches[0]["text"].startswith("鱼尾礼服")
 
 win = MainWindow()
 assert win.tabs.count() == 5

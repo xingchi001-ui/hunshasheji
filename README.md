@@ -17,3 +17,20 @@ HTTP 返回：200
 finish_reason=stop
 文本长度=4641
 ```
+
+## 礼服设计知识库兼容接入
+
+项目现在支持将本地生成的礼服设计 `segments.jsonl` 导入 SQLite 的 `dress_knowledge` 表，并在生成设计方案前按参考图识别结果、灵感关键词和设计师要求检索候选记录。
+
+```bash
+python import_dress_data.py /path/to/segments.jsonl --db show_gown_studio.db --replace
+python main.py
+```
+
+也可以设置 `DRESS_TRAINING_DATA`，工作台启动时会在知识表为空时自动导入。没有本地训练数据时，原有工作流保持不变。原书 PDF 和完整正文不随代码提交到公开仓库。
+
+兼容性回归：
+
+```bash
+python tests/test_regression.py
+```

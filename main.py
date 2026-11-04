@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
+from dress_knowledge import ensure_schema, import_segments, search_segments, format_context
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
@@ -22,6 +23,7 @@ APP_NAME = "秀场礼服设计工作台"
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.json"
 DB_PATH = ROOT / "show_gown_studio.db"
+TRAINING_DATA_PATH = Path(os.getenv("DRESS_TRAINING_DATA", ROOT / "data" / "dress_training" / "segments.jsonl"))
 
 
 def default_config():
@@ -32,6 +34,7 @@ def default_config():
         "text_model": "deepseek-v4.1-flash",
         "image_model": "gpt-image-2.5",
         "timeout_seconds": 180,
+        "dress_training_data": str(TRAINING_DATA_PATH),
     }
 
 
@@ -95,6 +98,7 @@ class ProjectDB:
                 created_at TEXT NOT NULL
             );
             """)
+            ensure_schema(c)
 
     def save(self, data, references):
         now = datetime.now().isoformat(timespec="seconds")
@@ -109,6 +113,14 @@ class ProjectDB:
     def record_generation(self, project_id, model, prompt, output_path):
         with self.connect() as c:
             c.execute("INSERT INTO generation_runs(project_id,model,prompt,output_path,created_at) VALUES(?,?,?,?,?)", (project_id, model, prompt, output_path, datetime.now().isoformat(timespec="seconds")))
+
+    def import_dress_training_data(self, jsonl_path, replace=False):
+        with self.connect() as c:
+            return import_segments(c, jsonl_path, replace=replace)
+
+    def search_dress_knowledge(self, query, limit=8):
+        with self.connect() as c:
+            return search_segments(c, query, limit=limit)
 
 
 class ApiWorker(QThread):
@@ -204,6 +216,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.config = load_config()
         self.db = ProjectDB()
+        self.ensure_dress_training_data()
         self.references = []
         self.analysis = {}
         self.design_plan = ""
@@ -214,6 +227,22 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(self.styles())
         self.build_ui()
         self.update_steps()
+
+    def ensure_dress_training_data(self):
+        path = Path(self.config.get("dress_training_data", TRAINING_DATA_PATH)).expanduser()
+        if not path.exists():
+            self._training_data_status = "未配置本地礼服知识库"
+            return
+        try:
+            with self.db.connect() as connection:
+                count = connection.execute("SELECT COUNT(*) FROM dress_knowledge").fetchone()[0]
+            if count == 0:
+                imported = self.db.import_dress_training_data(path)
+                self._training_data_status = f"已载入礼服知识库 {imported} 条"
+            else:
+                self._training_data_status = f"礼服知识库已就绪 {count} 条"
+        except Exception as exc:
+            self._training_data_status = f"礼服知识库未载入：{exc}"
 
     def styles(self):
         return """
@@ -329,7 +358,11 @@ class MainWindow(QMainWindow):
 
     def generate_plan(self):
         analysis = self.analysis_output.toPlainText().strip() or "尚未完成参考图识别，请基于用户关键词先给出初步方案。"
-        prompt = f"你是一名资深秀场礼服设计总监。根据以下参考图识别结果、灵感关键词和设计师补充要求，生成一份可落地的中文礼服设计方案。必须包含：设计概念、廓形比例、领袖结构、面料色彩、工艺拆解、秀场灯光与动态、量体/打版/试衣检查、给图片模型的视觉提示词。参考识别：{analysis}\n灵感关键词：{self.keywords.toPlainText()}\n补充要求：{self.brief_input.toPlainText()}"
+        query = " ".join([analysis, self.keywords.toPlainText(), self.brief_input.toPlainText()])
+        matches = self.db.search_dress_knowledge(query, limit=8)
+        context = format_context(matches) if matches else "本地礼服知识库暂无匹配记录；请基于通用服装设计原则完成方案。"
+        self.append_log(f"礼服知识库检索：命中 {len(matches)} 条候选记录")
+        prompt = f"你是一名资深秀场礼服设计总监。根据以下参考图识别结果、灵感关键词、设计师补充要求和本地知识库候选记录，生成一份可落地的中文礼服设计方案。必须包含：设计概念、廓形比例、领袖结构、面料色彩、工艺拆解、秀场灯光与动态、量体/打版/试衣检查、给图片模型的视觉提示词。不要照抄知识库原文；将其转化为原创设计决策，并明确区分候选资料与最终判断。\n参考识别：{analysis}\n灵感关键词：{self.keywords.toPlainText()}\n补充要求：{self.brief_input.toPlainText()}\n{context}"
         self.plan_btn.setEnabled(False); self.plan_btn.setText("AI 方案生成中……"); self.start_chat([{"role": "user", "content": prompt}], self.plan_done)
 
     def plan_done(self, result, error, ok):
