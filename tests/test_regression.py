@@ -8,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PySide6.QtWidgets import QApplication
 from main import MainWindow, ProjectDB, default_config, read_raw_image
+from dress_knowledge import recommend_design, audit_design, format_decision_package
 
 app = QApplication.instance() or QApplication([])
 with tempfile.TemporaryDirectory() as td:
@@ -15,7 +16,7 @@ with tempfile.TemporaryDirectory() as td:
     assert (Path(td) / "test.db").exists()
     with db.connect() as c:
         names = {row[0] for row in c.execute("select name from sqlite_master where type='table'")}
-    assert {"projects", "reference_assets", "generation_runs", "dress_knowledge", "project_knowledge_links"}.issubset(names)
+    assert {"projects", "reference_assets", "generation_runs", "dress_knowledge", "project_knowledge_links", "project_decision_audits", "generation_audits"}.issubset(names)
     sample_data = Path(td) / "segments.jsonl"
     sample_data.write_text(json.dumps({
         "id": "book:p0001:s0001", "book_id": "book", "page": 1,
@@ -48,6 +49,11 @@ assert win.knowledge_matches
 assert "书籍" in context
 assert "鱼尾" in win.knowledge_output.toPlainText()
 assert "已命中" in win.knowledge_status.text()
+assert win.design_recommendations["evidence_count"] == len(win.knowledge_matches)
+assert "evidence_ids" in win.knowledge_output.toPlainText()
+audit = audit_design({"silhouette": "鱼尾", "train": "超长拖尾", "craft": "珠绣", "fabric": "透明欧根纱", "measurements": {}}, win.design_recommendations)
+assert audit["risk_count"] >= 3
+assert "preflight_audit" in format_decision_package(win.design_recommendations, audit)
 assert "gpt-image-2.5" in default_config()["image_model"]
 
 with tempfile.TemporaryDirectory() as td:
@@ -65,7 +71,9 @@ for token in ["/chat/completions", "/images/generations", "/images/edits", "imag
 assert 'self.start_chat([{"role": "user", "content": parts}], self.analysis_done, self.config.get("vision_model")' in source
 assert 'max_completion_tokens": 8000' in source
 assert 'finish_reason=' in source and '推理字段长度=' in source
-assert 'reasoning_effort' in source and 'model_key' in source
+assert "reasoning_effort" in source and "model_key" in source
+for token in ["recommend_design", "audit_design", "project_decision_audits", "generation_audits", "evidence_ids"]:
+    assert token in source or token in (Path(__file__).resolve().parents[1] / "dress_knowledge.py").read_text(encoding="utf-8")
 assert "PIL" not in source and "cv2" not in source and "Image.open" not in source
 bat = (Path(__file__).resolve().parents[1] / "build.bat").read_text(encoding="utf-8")
 assert all(ord(c) < 128 for c in bat)
