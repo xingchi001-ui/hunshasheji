@@ -97,10 +97,17 @@ class ProjectDB:
                 output_path TEXT,
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS project_knowledge_links (
+                project_id INTEGER NOT NULL,
+                segment_id TEXT NOT NULL,
+                rank INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(project_id, segment_id)
+            );
             """)
             ensure_schema(c)
 
-    def save(self, data, references):
+    def save(self, data, references, knowledge_matches=None):
         now = datetime.now().isoformat(timespec="seconds")
         with self.connect() as c:
             cursor = c.execute("INSERT INTO projects(name,created_at,updated_at,analysis_json,design_plan,parameters_json,notes) VALUES(?,?,?,?,?,?,?)", (
@@ -108,6 +115,8 @@ class ProjectDB:
             project_id = cursor.lastrowid
             for path in references:
                 c.execute("INSERT INTO reference_assets(project_id,path,label,created_at) VALUES(?,?,?,?)", (project_id, path, Path(path).name, now))
+            for rank, row in enumerate(knowledge_matches or [], start=1):
+                c.execute("INSERT OR REPLACE INTO project_knowledge_links(project_id,segment_id,rank,created_at) VALUES(?,?,?,?)", (project_id, row["id"], rank, now))
             return project_id
 
     def record_generation(self, project_id, model, prompt, output_path):
@@ -217,6 +226,7 @@ class MainWindow(QMainWindow):
         self.config = load_config()
         self.db = ProjectDB()
         self.ensure_dress_training_data()
+        self.knowledge_matches = []
         self.references = []
         self.analysis = {}
         self.design_plan = ""
@@ -286,7 +296,7 @@ class MainWindow(QMainWindow):
         right = QVBoxLayout(); intro = QLabel("第一步：上传参考图后，让多模态模型识别色彩、廓形、面料、工艺、氛围、构图和设计平台维度。程序只读取原始字节并通过 API 发送，不做本地图像识别或静态图像处理。") ; intro.setWordWrap(True); intro.setObjectName("muted"); right.addWidget(intro); self.analyze_btn = QPushButton("调用多模态模型识别参考图"); self.analyze_btn.clicked.connect(self.analyze_references); right.addWidget(self.analyze_btn); self.analysis_output = QTextEdit(); self.analysis_output.setPlaceholderText("多模态识别结果会以 JSON/中文摘要显示在这里，可人工修改后进入下一步。"); right.addWidget(self.analysis_output, 2); right.addWidget(QLabel("实时 API 日志（不记录 API Key）")); self.live_log = QTextEdit(); self.live_log.setReadOnly(True); self.live_log.setPlaceholderText("点击识别后，这里会显示端点、模型、HTTP 状态、响应结构和具体错误。"); self.live_log.setMaximumHeight(190); right.addWidget(self.live_log); layout.addLayout(right, 2); return tab
 
     def assistant_tab(self):
-        tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第二步：将参考图识别结果、关键词和设计师要求交给文字模型，生成可执行的礼服设计方案。") ; intro.setObjectName("muted"); layout.addWidget(intro); self.brief_input = QTextEdit(); self.brief_input.setPlaceholderText("补充设计目标，例如：希望更适合闭幕秀，强调远距离轮廓和灯光下的闪烁层次……"); layout.addWidget(self.brief_input); row = QHBoxLayout(); self.plan_btn = QPushButton("生成 AI 设计方案"); self.plan_btn.clicked.connect(self.generate_plan); row.addWidget(self.plan_btn); apply = QPushButton("将方案写入设计工作台"); apply.setProperty("secondary", True); apply.clicked.connect(self.apply_plan); row.addWidget(apply); row.addStretch(); layout.addLayout(row); self.plan_output = QTextEdit(); self.plan_output.setPlaceholderText("AI 设计助理输出：概念、廓形、面料、工艺、秀场动态、试衣检查和图片生成提示词。"); layout.addWidget(self.plan_output, 2); return tab
+        tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第二步：将参考图识别结果、关键词和设计师要求交给文字模型，生成可执行的礼服设计方案。"); intro.setObjectName("muted"); layout.addWidget(intro); self.brief_input = QTextEdit(); self.brief_input.setPlaceholderText("补充设计目标，例如：希望更适合闭幕秀，强调远距离轮廓和灯光下的闪烁层次……"); layout.addWidget(self.brief_input); row = QHBoxLayout(); self.knowledge_btn = QPushButton("检索本地礼服知识库"); self.knowledge_btn.clicked.connect(self.refresh_knowledge_context); row.addWidget(self.knowledge_btn); self.plan_btn = QPushButton("生成 AI 设计方案"); self.plan_btn.clicked.connect(self.generate_plan); row.addWidget(self.plan_btn); apply = QPushButton("将方案写入设计工作台"); apply.setProperty("secondary", True); apply.clicked.connect(self.apply_plan); row.addWidget(apply); row.addStretch(); layout.addLayout(row); self.knowledge_output = QTextEdit(); self.knowledge_output.setReadOnly(True); self.knowledge_output.setPlaceholderText("这里显示数据库命中的设计理念、结构参数、来源页码和复核状态。"); layout.addWidget(QLabel("数据库命中：设计理念与来源")); layout.addWidget(self.knowledge_output, 1); self.plan_output = QTextEdit(); self.plan_output.setPlaceholderText("AI 设计助理输出：概念、廓形、面料、工艺、秀场动态、试衣检查和图片生成提示词。"); layout.addWidget(self.plan_output, 2); return tab
 
     def workbench_tab(self):
         tab = QWidget(); layout = QHBoxLayout(tab); left = QVBoxLayout(); meta = QGroupBox("项目与结构化参数"); mf = QFormLayout(meta); self.project_name = QLineEdit("2026 春夏 · 午夜花园"); self.client = QLineEdit("Look 01"); self.occasion = QLineEdit("品牌发布秀 / 闭幕造型"); mf.addRow("项目名称", self.project_name); mf.addRow("造型编号", self.client); mf.addRow("使用场景", self.occasion); left.addWidget(meta)
@@ -294,7 +304,7 @@ class MainWindow(QMainWindow):
         measures = QGroupBox("量体数据"); grid = QGridLayout(measures); self.height = self.measure(175); self.bust = self.measure(84); self.waist = self.measure(64); self.hip = self.measure(90); widgets = [("身高", self.height), ("胸围", self.bust), ("腰围", self.waist), ("臀围", self.hip)];
         for i, (name, widget) in enumerate(widgets): grid.addWidget(QLabel(name), i // 2, (i % 2) * 2); grid.addWidget(widget, i // 2, (i % 2) * 2 + 1)
         left.addWidget(measures); layout.addLayout(left, 1)
-        right = QVBoxLayout(); info = QLabel("第三步：AI 方案落地为可修改的数据库参数。只有确认这里的结构化参数后，第四步才会调用图片 API。") ; info.setWordWrap(True); info.setObjectName("muted"); right.addWidget(info); self.parameter_json = QTextEdit(); self.parameter_json.setReadOnly(True); right.addWidget(QLabel("当前参数 JSON")); right.addWidget(self.parameter_json, 2); refresh = QPushButton("刷新结构化参数"); refresh.clicked.connect(self.refresh_parameter_json); right.addWidget(refresh); layout.addLayout(right, 1); return tab
+        right = QVBoxLayout(); info = QLabel("第三步：AI 方案落地为可修改的数据库参数。只有确认这里的结构化参数后，第四步才会调用图片 API。") ; info.setWordWrap(True); info.setObjectName("muted"); right.addWidget(info); self.knowledge_status = QLabel("知识库链路：等待检索"); self.knowledge_status.setObjectName("muted"); right.addWidget(self.knowledge_status); self.parameter_json = QTextEdit(); self.parameter_json.setReadOnly(True); right.addWidget(QLabel("当前参数 JSON")); right.addWidget(self.parameter_json, 2); refresh = QPushButton("刷新结构化参数"); refresh.clicked.connect(self.refresh_parameter_json); right.addWidget(refresh); layout.addLayout(right, 1); return tab
 
     def image_tab(self):
         tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第四步：根据已确认的设计工作台参数、AI 方案、灵感关键词和原始参考图调用图片 API。无参考图调用 generations，有参考图调用 edits。") ; intro.setWordWrap(True); intro.setObjectName("muted"); layout.addWidget(intro); controls = QGroupBox("效果图设置"); cf = QFormLayout(controls); self.image_extra = QTextEdit(); self.image_extra.setPlaceholderText("补充视角、舞台灯光、模特姿态、摄影风格等"); self.image_size = self.combo(["1024x1536", "1024x1024", "1536x1024"]); self.image_quality = self.combo(["low", "medium", "high"]); cf.addRow("补充提示词", self.image_extra); cf.addRow("画幅", self.image_size); cf.addRow("质量", self.image_quality); layout.addWidget(controls); row = QHBoxLayout(); self.generate_btn = QPushButton("调用 gpt-image-2.5 生成效果图"); self.generate_btn.clicked.connect(self.generate_image); row.addWidget(self.generate_btn); self.save_image_btn = QPushButton("保存 API 原图"); self.save_image_btn.setProperty("secondary", True); self.save_image_btn.setEnabled(False); self.save_image_btn.clicked.connect(self.save_generated_image); row.addWidget(self.save_image_btn); row.addStretch(); layout.addLayout(row); self.generated_label = QLabel("API 返回的原图将在这里显示"); self.generated_label.setAlignment(Qt.AlignCenter); self.generated_label.setMinimumHeight(420); self.generated_label.setStyleSheet("background:#fffdf9;border:1px solid #ddd4c8;border-radius:8px;color:#81766d;"); layout.addWidget(self.generated_label, 1); return tab
@@ -358,12 +368,20 @@ class MainWindow(QMainWindow):
 
     def generate_plan(self):
         analysis = self.analysis_output.toPlainText().strip() or "尚未完成参考图识别，请基于用户关键词先给出初步方案。"
-        query = " ".join([analysis, self.keywords.toPlainText(), self.brief_input.toPlainText()])
-        matches = self.db.search_dress_knowledge(query, limit=8)
-        context = format_context(matches) if matches else "本地礼服知识库暂无匹配记录；请基于通用服装设计原则完成方案。"
-        self.append_log(f"礼服知识库检索：命中 {len(matches)} 条候选记录")
+        context = self.refresh_knowledge_context()
         prompt = f"你是一名资深秀场礼服设计总监。根据以下参考图识别结果、灵感关键词、设计师补充要求和本地知识库候选记录，生成一份可落地的中文礼服设计方案。必须包含：设计概念、廓形比例、领袖结构、面料色彩、工艺拆解、秀场灯光与动态、量体/打版/试衣检查、给图片模型的视觉提示词。不要照抄知识库原文；将其转化为原创设计决策，并明确区分候选资料与最终判断。\n参考识别：{analysis}\n灵感关键词：{self.keywords.toPlainText()}\n补充要求：{self.brief_input.toPlainText()}\n{context}"
         self.plan_btn.setEnabled(False); self.plan_btn.setText("AI 方案生成中……"); self.start_chat([{"role": "user", "content": prompt}], self.plan_done)
+
+    def refresh_knowledge_context(self):
+        query = " ".join([self.analysis_output.toPlainText(), self.keywords.toPlainText(), self.brief_input.toPlainText()])
+        self.knowledge_matches = self.db.search_dress_knowledge(query, limit=8)
+        context = format_context(self.knowledge_matches) if self.knowledge_matches else "本地礼服知识库暂无匹配记录；请基于通用服装设计原则完成方案。"
+        if hasattr(self, "knowledge_output"):
+            self.knowledge_output.setPlainText(context)
+        if hasattr(self, "knowledge_status"):
+            self.knowledge_status.setText(f"知识库链路：已命中 {len(self.knowledge_matches)} 条，方案生成将使用这些候选记录")
+        self.append_log(f"礼服知识库检索：命中 {len(self.knowledge_matches)} 条候选记录")
+        return context
 
     def plan_done(self, result, error, ok):
         self.plan_btn.setEnabled(True); self.plan_btn.setText("生成 AI 设计方案")
@@ -407,7 +425,7 @@ class MainWindow(QMainWindow):
         self.start_chat([{"role": "user", "content": "只回复：文字 API 连接正常"}], lambda result, error, ok: (QMessageBox.information(self, "测试结果", result if ok else error)))
 
     def save_project(self):
-        self.refresh_parameter_json(); project_id = self.db.save(self.collect_data(), self.references); self.status.setText(f"已保存到 SQLite · 项目 {project_id}"); QMessageBox.information(self, "已保存", f"项目已保存到本地数据库：{DB_PATH.name}\n项目编号：{project_id}")
+        self.refresh_parameter_json(); project_id = self.db.save(self.collect_data(), self.references, self.knowledge_matches); self.status.setText(f"已保存到 SQLite · 项目 {project_id} · 知识库关联 {len(self.knowledge_matches)} 条"); QMessageBox.information(self, "已保存", f"项目已保存到本地数据库：{DB_PATH.name}\n项目编号：{project_id}\n知识库关联：{len(self.knowledge_matches)} 条")
 
     def export_brief(self):
         path, _ = QFileDialog.getSaveFileName(self, "导出设计单", "show_gown_design_brief.html", "HTML (*.html);;Markdown (*.md)")

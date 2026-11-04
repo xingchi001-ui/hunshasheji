@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory() as td:
     assert (Path(td) / "test.db").exists()
     with db.connect() as c:
         names = {row[0] for row in c.execute("select name from sqlite_master where type='table'")}
-    assert {"projects", "reference_assets", "generation_runs"}.issubset(names)
+    assert {"projects", "reference_assets", "generation_runs", "dress_knowledge", "project_knowledge_links"}.issubset(names)
     sample_data = Path(td) / "segments.jsonl"
     sample_data.write_text(json.dumps({
         "id": "book:p0001:s0001", "book_id": "book", "page": 1,
@@ -42,6 +42,12 @@ win.analysis_output.setPlainText('{"主题":"午夜花园"}')
 win.plan_output.setPlainText("鱼尾礼服设计方案：黑金缎面与珠绣。")
 assert "午夜花园" in win.image_prompt()
 assert "鱼尾" in win.image_prompt()
+win.brief_input.setPlainText("鱼尾 蕾丝 立体裁剪")
+context = win.refresh_knowledge_context()
+assert win.knowledge_matches
+assert "书籍" in context
+assert "鱼尾" in win.knowledge_output.toPlainText()
+assert "已命中" in win.knowledge_status.text()
 assert "gpt-image-2.5" in default_config()["image_model"]
 
 with tempfile.TemporaryDirectory() as td:
