@@ -34,3 +34,21 @@ python main.py
 ```bash
 python tests/test_regression.py
 ```
+
+## Windows standalone EXE build
+
+On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, and generates:
+
+```text
+release/ShowGownStudio/ShowGownStudio.exe
+```
+
+The GUI remains Chinese. Copy `config.example.json` to `config.json` beside the EXE and fill in the API key. Then double-click the ASCII-only `start.bat` to launch the app. The config file, SQLite database, and local training data stay beside the EXE instead of the PyInstaller temporary folder.
+
+Optional local training data path:
+
+```text
+data/dress_training/segments.jsonl
+```
+
+Original PDFs and complete book text are not included in the EXE package.

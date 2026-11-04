@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "秀场礼服设计工作台"
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.json"
 DB_PATH = ROOT / "show_gown_studio.db"
 TRAINING_DATA_PATH = Path(os.getenv("DRESS_TRAINING_DATA", ROOT / "data" / "dress_training" / "segments.jsonl"))
