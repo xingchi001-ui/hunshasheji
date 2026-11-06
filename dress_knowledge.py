@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
-FACETS = ("garment_type", "silhouette", "neckline", "sleeve", "waistline", "skirt_shape", "fabric", "surface_detail", "construction", "occasion", "color", "measurements", "design_concept", "visual_effect", "movement", "fit", "risk", "lighting", "process", "compatibility")
+FACETS = ("page_type", "visible_garment", "garment_type", "silhouette", "neckline", "sleeve", "waistline", "skirt_shape", "fabric", "surface_detail", "construction", "occasion", "color", "measurements", "design_concept", "visual_effect", "movement", "fit", "risk", "lighting", "process", "compatibility", "design_inspiration", "visual_evidence", "uncertainty")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS dress_knowledge (
     id TEXT PRIMARY KEY, book_id TEXT NOT NULL, page INTEGER NOT NULL, text TEXT NOT NULL,

@@ -22,12 +22,37 @@ finish_reason=stop
 
 项目现在支持将本地生成的礼服设计 `segments.jsonl` 导入 SQLite 的 `dress_knowledge` 表，并在生成设计方案前按参考图识别结果、灵感关键词和设计师要求检索候选记录。
 
+仓库已内置当前视觉知识库：`show_gown_studio.db` 包含 846 条逐页视觉理解记录，程序启动时默认读取该数据库。数据库不是静态附件：设计简报会先检索 `dress_knowledge`，再生成结构化推荐、来源证据和风险审查，并在保存项目/生成记录时写入关联证据与决策包。
+
 ```bash
 python import_dress_data.py /path/to/segments.jsonl --db show_gown_studio.db --replace
 python main.py
 ```
 
 也可以设置 `DRESS_TRAINING_DATA`，工作台启动时会在知识表为空时自动导入。没有本地训练数据时，原有工作流保持不变。原书 PDF 和完整正文不随代码提交到公开仓库。
+
+### 从 PDF 建立视觉设计数据库
+
+`analyze_books_to_db.py` 会逐本逐页渲染 PDF 页面，并使用配置的视觉模型分析廓形、领型、袖型、面料、表面细节、结构工艺、色彩、动态效果、设计启发和不确定性。该流程只发送页面图像，明确禁止 OCR 和文字转录；结果可断点续跑，写入 `segments.jsonl` 后导入 SQLite：
+
+```bash
+LLM_TOKEN_API_KEY='你的密钥' python analyze_books_to_db.py /path/to/pdfs \
+  --model MiniMax-M3 \
+  --output data/dress_training/segments.jsonl \
+  --db show_gown_studio.db
+```
+
+分析结果会进入 `dress_knowledge`，设计方案生成前按设计简报和视觉分析检索证据，推荐与风险审计会记录证据页和决策包。
+
+### 已内置数据库文件
+
+```text
+show_gown_studio.db                         # 846 条知识记录，应用默认使用
+data/dress_training/segments_846.jsonl      # 对应的视觉理解记录
+data/dress_training/failed_pages.jsonl      # 尚未成功分析的页面清单
+```
+
+数据库链路的实测回归覆盖：SQLite 表初始化、知识检索、结构化推荐、风险审计、项目证据关联、生成审计和 GUI 离屏启动。
 
 兼容性回归：
 

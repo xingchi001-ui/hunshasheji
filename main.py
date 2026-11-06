@@ -30,7 +30,7 @@ def default_config():
     return {
         "api_base_url": "https://api.llm-token.cn/v1",
         "api_key": "",
-        "vision_model": "MiniMax-M3.1",
+        "vision_model": "MiniMax-M3",
         "text_model": "deepseek-v4.1-flash",
         "image_model": "gpt-image-2.5",
         "timeout_seconds": 180,

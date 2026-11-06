@@ -31,7 +31,7 @@ with tempfile.TemporaryDirectory() as td:
 
 win = MainWindow()
 assert win.tabs.count() == 5
-assert win.vision_model.currentText() == "MiniMax-M3.1"
+assert win.vision_model.currentText() == "MiniMax-M3"
 assert win.text_model.currentText() == "deepseek-v4.1-flash"
 assert win.image_model.currentText() == "gpt-image-2.5"
 win.silhouette.setCurrentText("鱼尾")
@@ -51,6 +51,8 @@ assert "鱼尾" in win.knowledge_output.toPlainText()
 assert "已命中" in win.knowledge_status.text()
 assert win.design_recommendations["evidence_count"] == len(win.knowledge_matches)
 assert "evidence_ids" in win.knowledge_output.toPlainText()
+assert win.design_recommendations["evidence_count"] > 0
+assert win.design_audit["evidence_count"] == len(win.knowledge_matches)
 audit = audit_design({"silhouette": "鱼尾", "train": "超长拖尾", "craft": "珠绣", "fabric": "透明欧根纱", "measurements": {}}, win.design_recommendations)
 assert audit["risk_count"] >= 3
 assert "preflight_audit" in format_decision_package(win.design_recommendations, audit)
@@ -74,6 +76,11 @@ assert 'finish_reason=' in source and '推理字段长度=' in source
 assert "reasoning_effort" in source and "model_key" in source
 for token in ["recommend_design", "audit_design", "project_decision_audits", "generation_audits", "evidence_ids"]:
     assert token in source or token in (Path(__file__).resolve().parents[1] / "dress_knowledge.py").read_text(encoding="utf-8")
+bundled_db = Path(__file__).resolve().parents[1] / "show_gown_studio.db"
+assert bundled_db.exists()
+import sqlite3
+with sqlite3.connect(bundled_db) as c:
+    assert c.execute("select count(*) from dress_knowledge").fetchone()[0] == 846
 assert "PIL" not in source and "cv2" not in source and "Image.open" not in source
 bat = (Path(__file__).resolve().parents[1] / "build.bat").read_text(encoding="utf-8")
 assert all(ord(c) < 128 for c in bat)
