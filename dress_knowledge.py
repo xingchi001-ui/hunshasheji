@@ -13,6 +13,13 @@ CREATE TABLE IF NOT EXISTS dress_knowledge (
 );
 CREATE INDEX IF NOT EXISTS idx_dress_knowledge_book_page ON dress_knowledge(book_id, page);
 CREATE INDEX IF NOT EXISTS idx_dress_knowledge_review ON dress_knowledge(review_required);
+CREATE TABLE IF NOT EXISTS model_styling_knowledge (
+    id TEXT PRIMARY KEY, knowledge_id TEXT NOT NULL, book_id TEXT NOT NULL, page INTEGER NOT NULL,
+    hairstyle TEXT DEFAULT '', hair_accessory TEXT DEFAULT '', expression TEXT DEFAULT '',
+    pose TEXT DEFAULT '', gaze TEXT DEFAULT '', movement TEXT DEFAULT '', compatibility TEXT DEFAULT '',
+    evidence_text TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_model_styling_book_page ON model_styling_knowledge(book_id, page);
 """
 
 
@@ -42,7 +49,73 @@ def import_segments(connection: sqlite3.Connection, jsonl_path: str | Path, repl
             )
             count += 1
     connection.commit()
+    rebuild_model_styling_knowledge(connection)
     return count
+
+
+def _extract_styling(knowledge: dict, text: str) -> dict:
+    """Convert visual evidence into database-owned model styling facets; no random defaults."""
+    blob = " ".join([text, json.dumps(knowledge, ensure_ascii=False)])
+    groups = {
+        "hairstyle": ("发型", "盘发", "发髻", "马尾", "编发", "发丝", "长发", "短发", "波浪发"),
+        "hair_accessory": ("头纱", "头饰", "发饰", "冠", "帽", "花环"),
+        "expression": ("回眸", "凝视", "微笑", "沉静", "温柔", "冷峻", "优雅", "浪漫", "神秘", "自信"),
+        "pose": ("站姿", "坐姿", "抬臂", "展臂", "屈臂", "迈步", "行走", "转身", "侧身", "回眸"),
+        "gaze": ("回眸", "凝视", "视线", "看向", "望向"),
+        "movement": ("行走", "迈步", "转身", "摆臂", "摆动", "飘动", "扬起", "展开", "延迟摆动", "动态"),
+    }
+    out = {}
+    for field, terms in groups.items():
+        out[field] = "、".join(dict.fromkeys(term for term in terms if term in blob))
+    compatibility = []
+    for field in ("silhouette", "fabric", "occasion", "visual_effect", "lighting"):
+        compatibility.extend(str(v) for v in (knowledge.get(field) or []) if str(v).strip())
+    out["compatibility"] = "、".join(dict.fromkeys(compatibility[:12]))
+    out["evidence_text"] = text[:1200]
+    return out
+
+
+def rebuild_model_styling_knowledge(connection: sqlite3.Connection) -> int:
+    ensure_schema(connection)
+    connection.execute("DELETE FROM model_styling_knowledge")
+    rows = connection.execute("SELECT id, book_id, page, text, knowledge_json FROM dress_knowledge").fetchall()
+    inserted = 0
+    for knowledge_id, book_id, page, text, knowledge_json in rows:
+        knowledge = json.loads(knowledge_json or "{}")
+        styling = _extract_styling(knowledge, text)
+        if not any(styling.get(k) for k in ("hairstyle", "hair_accessory", "expression", "pose", "gaze", "movement")):
+            continue
+        connection.execute(
+            """INSERT INTO model_styling_knowledge
+            (id, knowledge_id, book_id, page, hairstyle, hair_accessory, expression, pose, gaze, movement, compatibility, evidence_text)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (f"{knowledge_id}:styling", knowledge_id, book_id, int(page), styling["hairstyle"], styling["hair_accessory"], styling["expression"], styling["pose"], styling["gaze"], styling["movement"], styling["compatibility"], styling["evidence_text"]),
+        )
+        inserted += 1
+    connection.commit()
+    return inserted
+
+
+def search_model_styling(connection: sqlite3.Connection, query: str, recommendations: dict, rotation_index: int = 0, limit: int = 8) -> dict:
+    """Choose model styling only from visual evidence stored in SQLite."""
+    ensure_schema(connection)
+    terms = _query_terms(query + " " + " ".join(str(v) for v in (recommendations or {}).get("silhouette", [])))
+    rows = connection.execute("SELECT id, knowledge_id, book_id, page, hairstyle, hair_accessory, expression, pose, gaze, movement, compatibility, evidence_text FROM model_styling_knowledge").fetchall()
+    ranked = []
+    for row in rows:
+        item = dict(zip(("id", "knowledge_id", "book_id", "page", "hairstyle", "hair_accessory", "expression", "pose", "gaze", "movement", "compatibility", "evidence_text"), row))
+        blob = " ".join(str(item.get(k, "")) for k in ("hairstyle", "hair_accessory", "expression", "pose", "gaze", "movement", "compatibility", "evidence_text"))
+        score = sum(3 for term in terms if term and term in blob)
+        score += sum(2 for term in (recommendations or {}).get("fabric", []) if term in item["compatibility"])
+        if item["pose"]: score += 1
+        if item["hairstyle"] or item["hair_accessory"]: score += 1
+        if score: item["score"] = score; ranked.append(item)
+    ranked.sort(key=lambda x: (-x["score"], x["book_id"], x["page"], x["id"]))
+    candidates = ranked[:max(1, int(limit))]
+    if not candidates:
+        return {"status": "no_database_evidence", "decision_source": "SQLite model_styling_knowledge", "evidence_ids": [], "source_pages": []}
+    chosen = candidates[int(rotation_index) % len(candidates)]
+    return {"status": "selected_from_database", "decision_source": "SQLite model_styling_knowledge", "hairstyle": chosen["hairstyle"] or "数据库记录未明确发型", "hair_accessory": chosen["hair_accessory"] or "数据库记录未明确头饰", "expression": chosen["expression"] or "数据库记录未明确表情", "pose": chosen["pose"] or "数据库记录未明确姿态", "gaze": chosen["gaze"] or "数据库记录未明确视线", "movement": chosen["movement"] or "数据库记录未明确动态", "compatibility": chosen["compatibility"], "evidence_ids": [c["knowledge_id"] for c in candidates], "source_pages": [f"{c['book_id']} p.{c['page']}" for c in candidates], "selected_evidence_id": chosen["knowledge_id"], "selected_source_page": f"{chosen['book_id']} p.{chosen['page']}", "rotation_index": int(rotation_index)}
 
 
 def _facet_values(row: dict) -> dict:

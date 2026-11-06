@@ -3,14 +3,13 @@ import html
 import json
 import mimetypes
 import os
-import secrets
 import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import requests
-from dress_knowledge import ensure_schema, import_segments, search_segments, format_context, recommend_design, audit_design, format_decision_package
+from dress_knowledge import ensure_schema, import_segments, rebuild_model_styling_knowledge, search_segments, search_model_styling, format_context, recommend_design, audit_design, format_decision_package
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
@@ -21,13 +20,6 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "秀场礼服设计工作台"
-MODEL_VARIATIONS = (
-    "Chinese woman runway model, softly angular oval face, low textured chignon, calm poised expression, understated neutral makeup",
-    "Chinese woman runway model, delicate oval face, half-up wavy hair with a refined hair clasp, subtle confident gaze, natural makeup",
-    "Chinese woman runway model, elegant heart-shaped face, sleek short sculptural bob, composed editorial expression, clean makeup",
-    "Chinese woman runway model, balanced oval face, long controlled side braid, gentle contemplative expression, restrained makeup",
-    "Chinese woman runway model, softly rounded face, low ponytail with loose natural strands, faint relaxed smile, refined makeup",
-)
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.json"
 DB_PATH = ROOT / "show_gown_studio.db"
@@ -127,6 +119,7 @@ class ProjectDB:
             );
             """)
             ensure_schema(c)
+            rebuild_model_styling_knowledge(c)
 
     def save(self, data, references, knowledge_matches=None, recommendations=None, audit=None):
         now = datetime.now().isoformat(timespec="seconds")
@@ -155,6 +148,11 @@ class ProjectDB:
     def search_dress_knowledge(self, query, limit=8):
         with self.connect() as c:
             return search_segments(c, query, limit=limit)
+
+    def search_model_styling(self, query, recommendations, limit=8):
+        with self.connect() as c:
+            rotation_index = c.execute("SELECT COUNT(*) FROM generation_runs").fetchone()[0]
+            return search_model_styling(c, query, recommendations, rotation_index=rotation_index, limit=limit)
 
 
 class ApiWorker(QThread):
@@ -256,12 +254,12 @@ class MainWindow(QMainWindow):
         self.knowledge_matches = []
         self.design_recommendations = {}
         self.design_audit = {}
+        self.model_styling_decision = {}
         self.current_project_id = None
         self.references = []
         self.analysis = {}
         self.design_plan = ""
         self.generated_bytes = b""
-        self._model_variation = None
         self._last_image_prompt = ""
         self.worker = None
         self.setWindowTitle(APP_NAME)
@@ -410,6 +408,8 @@ class MainWindow(QMainWindow):
         self.knowledge_matches = self.db.search_dress_knowledge(query, limit=8)
         context = format_context(self.knowledge_matches) if self.knowledge_matches else "本地礼服知识库暂无匹配记录；请基于通用服装设计原则完成方案。"
         self.design_recommendations = recommend_design(self.knowledge_matches, query)
+        self.model_styling_decision = self.db.search_model_styling(query, self.design_recommendations, limit=8)
+        self.design_recommendations["model_styling_decision"] = self.model_styling_decision
         self.design_audit = audit_design(self.parameters(), self.design_recommendations)
         decision_text = format_decision_package(self.design_recommendations, self.design_audit)
         if hasattr(self, "knowledge_output"):
@@ -417,7 +417,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, "knowledge_status"):
             self.knowledge_status.setText(f"知识库链路：已命中 {len(self.knowledge_matches)} 条，方案生成将使用这些候选记录")
         self.append_log(f"礼服知识库检索：命中 {len(self.knowledge_matches)} 条候选记录")
-        return context + "\n结构化设计决策包：\n" + decision_text
+        styling_text = "\n数据库模特造型决策：\n" + json.dumps(self.model_styling_decision, ensure_ascii=False, indent=2)
+        return context + styling_text + "\n结构化设计决策包：\n" + decision_text
 
     def plan_done(self, result, error, ok):
         self.plan_btn.setEnabled(True); self.plan_btn.setText("生成 AI 设计方案")
@@ -439,12 +440,10 @@ class MainWindow(QMainWindow):
         return {"project_name": self.project_name.text(), "analysis": self.analysis, "design_plan": self.plan_output.toPlainText(), "parameters": self.parameters(), "notes": self.work_notes.toPlainText()}
 
     def image_prompt(self):
-        if self._model_variation is None:
-            self._model_variation = secrets.choice(MODEL_VARIATIONS)
-        d = self.collect_data(); return f"高级时装秀场礼服效果图。项目：{d['project_name']}。参考图识别摘要：{self.analysis_output.toPlainText()}。AI 设计方案：{d['design_plan']}。最终确认工作台参数：{json.dumps(d['parameters'], ensure_ascii=False)}。数据库设计决策包：{format_decision_package(self.design_recommendations, self.design_audit)}。灵感关键词：{self.keywords.toPlainText()}。补充要求：{self.image_extra.toPlainText()}。模特与真人质感：{self._model_variation}。必须是中国成年女性真人时装摄影感，面部自然有轻微不对称，真实皮肤纹理和毛孔，真实眼神、手部和身体比例，妆容克制并与礼服风格协调；避免塑料皮肤、蜡像脸、过度磨皮、诡异眼神、僵硬表情、重复脸、AI伪影。请生成全身专业时装视觉，完整表现礼服结构、比例、面料层次、工艺细节、秀场灯光和全身造型；遵守审查风险并避免不安全结构；不要文字、不要水印、不要品牌标识。"
+        d = self.collect_data(); styling = json.dumps(self.model_styling_decision, ensure_ascii=False, indent=2); return f"高级时装秀场礼服效果图。项目：{d['project_name']}。参考图识别摘要：{self.analysis_output.toPlainText()}。AI 设计方案：{d['design_plan']}。最终确认工作台参数：{json.dumps(d['parameters'], ensure_ascii=False)}。数据库设计决策包：{format_decision_package(self.design_recommendations, self.design_audit)}。数据库模特造型决策：{styling}。灵感关键词：{self.keywords.toPlainText()}。补充要求：{self.image_extra.toPlainText()}。必须是中国成年女性真人时装摄影感，严格遵守数据库选择的发型、头饰、表情、视线、姿态与动态；面部自然有轻微不对称，真实皮肤纹理和毛孔，真实眼神、手部和身体比例，妆容克制并与礼服风格协调；避免塑料皮肤、蜡像脸、过度磨皮、诡异眼神、僵硬表情、重复脸、AI伪影。请生成全身专业时装视觉，完整表现礼服结构、比例、面料层次、工艺细节、秀场灯光和全身造型；遵守审查风险并避免不安全结构；不要文字、不要水印、不要品牌标识。"
 
     def generate_image(self):
-        self._model_variation = None
+        self.refresh_knowledge_context()
         self.refresh_parameter_json()
         if not self.plan_output.toPlainText().strip(): QMessageBox.warning(self, "尚未完成第二步", "请先生成或填写 AI 设计方案。"); self.tabs.setCurrentIndex(1); return
         if not self.config.get("api_key"): QMessageBox.warning(self, "缺少 API Key", "请先在接口设置中填写 API Key。"); self.tabs.setCurrentIndex(4); return

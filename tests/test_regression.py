@@ -49,11 +49,14 @@ assert "AI伪影" in win.image_prompt()
 win.brief_input.setPlainText("鱼尾 蕾丝 立体裁剪")
 context = win.refresh_knowledge_context()
 assert win.knowledge_matches
+assert win.model_styling_decision["status"] == "selected_from_database"
+assert win.model_styling_decision["selected_evidence_id"] in win.model_styling_decision["evidence_ids"]
 assert "书籍" in context
 assert "鱼尾" in win.knowledge_output.toPlainText()
 assert "已命中" in win.knowledge_status.text()
 assert win.design_recommendations["evidence_count"] == len(win.knowledge_matches)
 assert "evidence_ids" in win.knowledge_output.toPlainText()
+assert "数据库模特造型决策" in context
 assert win.design_recommendations["evidence_count"] > 0
 assert win.design_audit["evidence_count"] == len(win.knowledge_matches)
 audit = audit_design({"silhouette": "鱼尾", "train": "超长拖尾", "craft": "珠绣", "fabric": "透明欧根纱", "measurements": {}}, win.design_recommendations)
@@ -75,7 +78,8 @@ for token in ["/chat/completions", "/images/generations", "/images/edits", "imag
     assert token in source
 assert '"n": 1' in source
 assert '"response_format": "b64_json"' not in source
-assert "MODEL_VARIATIONS" in source and "secrets.choice" in source
+assert "model_styling_decision" in source and "search_model_styling" in source
+assert "严格遵守数据库选择的发型、头饰、表情、视线、姿态与动态" in source
 assert 'self.start_chat([{"role": "user", "content": parts}], self.analysis_done, self.config.get("vision_model")' in source
 assert 'max_completion_tokens": 8000' in source
 assert 'finish_reason=' in source and '推理字段长度=' in source
