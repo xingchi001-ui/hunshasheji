@@ -115,7 +115,18 @@ def search_model_styling(connection: sqlite3.Connection, query: str, recommendat
     if not candidates:
         return {"status": "no_database_evidence", "decision_source": "SQLite model_styling_knowledge", "evidence_ids": [], "source_pages": []}
     chosen = candidates[int(rotation_index) % len(candidates)]
-    return {"status": "selected_from_database", "decision_source": "SQLite model_styling_knowledge", "hairstyle": chosen["hairstyle"] or "数据库记录未明确发型", "hair_accessory": chosen["hair_accessory"] or "数据库记录未明确头饰", "expression": chosen["expression"] or "数据库记录未明确表情", "pose": chosen["pose"] or "数据库记录未明确姿态", "gaze": chosen["gaze"] or "数据库记录未明确视线", "movement": chosen["movement"] or "数据库记录未明确动态", "compatibility": chosen["compatibility"], "evidence_ids": [c["knowledge_id"] for c in candidates], "source_pages": [f"{c['book_id']} p.{c['page']}" for c in candidates], "selected_evidence_id": chosen["knowledge_id"], "selected_source_page": f"{chosen['book_id']} p.{chosen['page']}", "rotation_index": int(rotation_index)}
+    hairstyle = chosen["hairstyle"] or "数据库记录未明确发型"
+    hair_accessory = chosen["hair_accessory"] or "数据库记录未明确头饰"
+    expression = chosen["expression"] or "数据库记录未明确表情"
+    pose = chosen["pose"] or "数据库记录未明确姿态"
+    gaze = chosen["gaze"] or "数据库记录未明确视线"
+    movement = chosen["movement"] or "数据库记录未明确动态"
+    garment_requirements = []
+    for field in ("silhouette", "fabric", "surface_detail", "construction", "color"):
+        garment_requirements.extend((recommendations or {}).get(field, [])[:3])
+    must_show = list(dict.fromkeys([v for v in garment_requirements if v]))
+    model_requirements = [v for v in (hairstyle, hair_accessory, expression, gaze, pose, movement) if not v.startswith("数据库记录未明确")]
+    return {"status": "selected_from_database", "decision_source": "SQLite model_styling_knowledge", "hairstyle": hairstyle, "hair_accessory": hair_accessory, "expression": expression, "pose": pose, "gaze": gaze, "movement": movement, "compatibility": chosen["compatibility"], "evidence_ids": [c["knowledge_id"] for c in candidates], "source_pages": [f"{c['book_id']} p.{c['page']}" for c in candidates], "selected_evidence_id": chosen["knowledge_id"], "selected_source_page": f"{chosen['book_id']} p.{chosen['page']}", "rotation_index": int(rotation_index), "database_acceptance": {"must_show_garment": must_show, "must_show_model": model_requirements, "must_show_pose_and_movement": [v for v in (pose, movement) if not v.startswith("数据库记录未明确")], "reject_if_missing": True}}
 
 
 def _facet_values(row: dict) -> dict:

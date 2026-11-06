@@ -51,12 +51,15 @@ context = win.refresh_knowledge_context()
 assert win.knowledge_matches
 assert win.model_styling_decision["status"] == "selected_from_database"
 assert win.model_styling_decision["selected_evidence_id"] in win.model_styling_decision["evidence_ids"]
+assert win.model_styling_decision["database_acceptance"]["reject_if_missing"] is True
 assert "书籍" in context
 assert "鱼尾" in win.knowledge_output.toPlainText()
 assert "已命中" in win.knowledge_status.text()
 assert win.design_recommendations["evidence_count"] == len(win.knowledge_matches)
 assert "evidence_ids" in win.knowledge_output.toPlainText()
 assert "数据库模特造型决策" in context
+assert "数据库图片验收硬约束" in win.image_prompt()
+assert "不得用与数据库指定姿态不一致的正面静态站姿替代" in win.image_prompt()
 assert win.design_recommendations["evidence_count"] > 0
 assert win.design_audit["evidence_count"] == len(win.knowledge_matches)
 audit = audit_design({"silhouette": "鱼尾", "train": "超长拖尾", "craft": "珠绣", "fabric": "透明欧根纱", "measurements": {}}, win.design_recommendations)
