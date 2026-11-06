@@ -28,11 +28,14 @@ FACETS = (
     "construction", "occasion", "color", "design_concept", "visual_effect",
     "movement", "fit", "risk", "lighting", "process", "compatibility",
     "design_inspiration", "visual_evidence", "uncertainty",
+    "pattern_seam_lines", "pattern_darts", "pattern_panels", "pattern_layers",
+    "pattern_draping_clues", "pattern_ease_clues", "pattern_material_relation",
+    "pattern_process", "pattern_validation", "pattern_risk",
 )
 
 ANALYSIS_PROMPT = """请把这张服装/礼服书页作为视觉设计资料进行精读，只分析可见的视觉与造型信息，不要OCR，不要读取、转录、翻译或复述图片中的任何文字。
 输出严格为中文 JSON 对象，字段必须包含：
-页面类型、可见服装、服装类别、廓形、领型、袖型、腰线、裙型、面料、表面细节、结构工艺、适用场合、色彩、设计概念、视觉效果、动态效果、合体与穿着、风险、灯光、工艺流程、搭配兼容、设计启发、视觉证据、不确定性。
+页面类型、可见服装、服装类别、廓形、领型、袖型、腰线、裙型、面料、表面细节、结构工艺、适用场合、色彩、设计概念、视觉效果、动态效果、合体与穿着、风险、灯光、工艺流程、搭配兼容、设计启发、视觉证据、不确定性、纸样分割线、纸样省道、纸样拼片、纸样层级、立体裁剪线索、放量线索、面料结构关系、纸样工艺顺序、纸样验证项目、纸样风险。
 每个字段的值使用字符串数组，每个字段最多 5 条、每条不超过 40 个汉字；页面类型用一个或多个短标签。若页面是封面、目录、版权页、纯图示、空白页或无法看清，仍需标记，并把不确定性写清楚。只根据图像可见内容，不要臆造不可见的纸样尺寸、人体量体或内层结构。"""
 
 KEY_MAP = {
@@ -44,6 +47,11 @@ KEY_MAP = {
     "合体与穿着": "fit", "风险": "risk", "灯光": "lighting", "工艺流程": "process",
     "搭配兼容": "compatibility", "设计启发": "design_inspiration", "视觉证据": "visual_evidence",
     "不确定性": "uncertainty",
+    "纸样分割线": "pattern_seam_lines", "纸样省道": "pattern_darts",
+    "纸样拼片": "pattern_panels", "纸样层级": "pattern_layers",
+    "立体裁剪线索": "pattern_draping_clues", "放量线索": "pattern_ease_clues",
+    "面料结构关系": "pattern_material_relation", "纸样工艺顺序": "pattern_process",
+    "纸样验证项目": "pattern_validation", "纸样风险": "pattern_risk",
 }
 
 
@@ -131,7 +139,7 @@ def call_vision(session: requests.Session, base_url: str, api_key: str, image: P
                 last_error = exc
         if attempt < 5:
             if choice.get("finish_reason") == "length":
-                payload["messages"][1]["content"][0]["text"] = "只返回完整JSON，不要OCR或复述文字。对这张服装设计页，只填以下字段，每个字段最多2条、每条不超过20字：页面类型、服装类别、廓形、领型、袖型、腰线、裙型、面料、表面细节、结构工艺、色彩、动态效果、设计启发、不确定性。所有值必须是字符串数组。"
+                payload["messages"][1]["content"][0]["text"] = "只返回完整JSON，不要OCR或复述文字。对这张服装设计页，只填以下字段，每个字段最多2条、每条不超过20字：页面类型、服装类别、廓形、领型、袖型、腰线、裙型、面料、表面细节、结构工艺、色彩、动态效果、纸样分割线、纸样省道、纸样拼片、纸样层级、立体裁剪线索、放量线索、面料结构关系、纸样工艺顺序、纸样验证项目、纸样风险、设计启发、不确定性。所有值必须是字符串数组。"
             else:
                 payload["messages"][1]["content"][0]["text"] = ANALYSIS_PROMPT + "\n再次强调：只返回完整 JSON，不要解释，不要 Markdown 代码围栏。"
             time.sleep(1)
@@ -176,6 +184,8 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=240)
     parser.add_argument("--sleep", type=float, default=0.2)
     parser.add_argument("--limit", type=int, default=0, help="仅处理前 N 页，用于试跑")
+    parser.add_argument("--start-page", type=int, default=1, help="每本书的起始页（含）")
+    parser.add_argument("--end-page", type=int, default=0, help="每本书的结束页（含），0 表示末页")
     parser.add_argument("--no-import", action="store_true")
     parser.add_argument("--failures", type=Path, default=Path("data/dress_training/failed_pages.jsonl"))
     parser.add_argument("--retry-failures", action="store_true", help="仅重试失败页")
@@ -215,7 +225,9 @@ def main() -> int:
                 info = subprocess.check_output(["pdfinfo", str(pdf)], text=True)
                 pages = int(re.search(r"^Pages:\s+(\d+)", info, re.M).group(1))
                 page_limit = min(pages, args.limit) if args.limit else pages
-                for page in range(1, page_limit + 1):
+                start_page = max(1, int(args.start_page))
+                end_page = min(page_limit, int(args.end_page)) if args.end_page else page_limit
+                for page in range(start_page, end_page + 1):
                     rid = f"{book_id}:p{page:04d}:s0001"
                     if rid in completed:
                         continue

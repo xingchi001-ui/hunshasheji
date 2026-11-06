@@ -1,1 +1,2 @@
 {"id": "已压缩_新婚礼服100例_包昌法_顾惠生编著_z-library_sk_1lib_sk_z-lib_sk:p0107:s0001", "book_id": "已压缩_新婚礼服100例_包昌法_顾惠生编著_z-library_sk_1lib_sk_z-lib_sk", "page": 107, "pdf": "（已压缩）新婚礼服100例 (包昌法，顾惠生编著) (z-library.sk, 1lib.sk, z-lib.sk).pdf", "error": "RuntimeError: model JSON parse failed after retry: empty model content; finish_reason=length"}
+{"id": "婚纱礼服100款:p0003:s0001", "book_id": "婚纱礼服100款", "page": 3, "pdf": "婚纱礼服100款.pdf", "error": "RuntimeError: vision request failed after retries: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"}

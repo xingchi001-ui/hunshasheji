@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
-FACETS = ("page_type", "visible_garment", "garment_type", "silhouette", "neckline", "sleeve", "waistline", "skirt_shape", "fabric", "surface_detail", "construction", "occasion", "color", "measurements", "design_concept", "visual_effect", "movement", "fit", "risk", "lighting", "process", "compatibility", "design_inspiration", "visual_evidence", "uncertainty")
+FACETS = ("page_type", "visible_garment", "garment_type", "silhouette", "neckline", "sleeve", "waistline", "skirt_shape", "fabric", "surface_detail", "construction", "occasion", "color", "measurements", "design_concept", "visual_effect", "movement", "fit", "risk", "lighting", "process", "compatibility", "design_inspiration", "visual_evidence", "uncertainty", "pattern_seam_lines", "pattern_darts", "pattern_panels", "pattern_layers", "pattern_draping_clues", "pattern_ease_clues", "pattern_material_relation", "pattern_process", "pattern_validation", "pattern_risk")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS dress_knowledge (
     id TEXT PRIMARY KEY, book_id TEXT NOT NULL, page INTEGER NOT NULL, text TEXT NOT NULL,
@@ -20,6 +20,14 @@ CREATE TABLE IF NOT EXISTS model_styling_knowledge (
     evidence_text TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_model_styling_book_page ON model_styling_knowledge(book_id, page);
+CREATE TABLE IF NOT EXISTS pattern_knowledge (
+    id TEXT PRIMARY KEY, knowledge_id TEXT NOT NULL, book_id TEXT NOT NULL, page INTEGER NOT NULL,
+    seam_lines TEXT DEFAULT '', darts TEXT DEFAULT '', panels TEXT DEFAULT '', layers TEXT DEFAULT '',
+    draping_clues TEXT DEFAULT '', ease_clues TEXT DEFAULT '', material_relation TEXT DEFAULT '',
+    process TEXT DEFAULT '', validation TEXT DEFAULT '', risk TEXT DEFAULT '', evidence_text TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pattern_knowledge_book_page ON pattern_knowledge(book_id, page);
 """
 
 
@@ -50,6 +58,7 @@ def import_segments(connection: sqlite3.Connection, jsonl_path: str | Path, repl
             count += 1
     connection.commit()
     rebuild_model_styling_knowledge(connection)
+    rebuild_pattern_knowledge(connection)
     return count
 
 
@@ -94,6 +103,52 @@ def rebuild_model_styling_knowledge(connection: sqlite3.Connection) -> int:
         inserted += 1
     connection.commit()
     return inserted
+
+
+def rebuild_pattern_knowledge(connection: sqlite3.Connection) -> int:
+    """Materialize visual pattern-making clues; blanks mean the page did not show evidence."""
+    ensure_schema(connection)
+    connection.execute("DELETE FROM pattern_knowledge")
+    rows = connection.execute("SELECT id, book_id, page, text, knowledge_json FROM dress_knowledge").fetchall()
+    fields = {
+        "seam_lines": "pattern_seam_lines", "darts": "pattern_darts", "panels": "pattern_panels",
+        "layers": "pattern_layers", "draping_clues": "pattern_draping_clues", "ease_clues": "pattern_ease_clues",
+        "material_relation": "pattern_material_relation", "process": "pattern_process",
+        "validation": "pattern_validation", "risk": "pattern_risk",
+    }
+    inserted = 0
+    for knowledge_id, book_id, page, text, knowledge_json in rows:
+        knowledge = json.loads(knowledge_json or "{}")
+        values = {name: "、".join(str(v) for v in (knowledge.get(facet) or []) if str(v).strip()) for name, facet in fields.items()}
+        if not any(values.values()):
+            continue
+        connection.execute(
+            """INSERT INTO pattern_knowledge
+            (id, knowledge_id, book_id, page, seam_lines, darts, panels, layers, draping_clues, ease_clues, material_relation, process, validation, risk, evidence_text)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (f"{knowledge_id}:pattern", knowledge_id, book_id, int(page), values["seam_lines"], values["darts"], values["panels"], values["layers"], values["draping_clues"], values["ease_clues"], values["material_relation"], values["process"], values["validation"], values["risk"], text[:1600]),
+        )
+        inserted += 1
+    connection.commit()
+    return inserted
+
+
+def search_pattern_knowledge(connection: sqlite3.Connection, query: str, limit: int = 8) -> list[dict]:
+    """Retrieve pattern-making evidence from visual records; never invent measurements."""
+    ensure_schema(connection)
+    terms = _query_terms(query)
+    if not terms:
+        return []
+    cols = ("id", "knowledge_id", "book_id", "page", "seam_lines", "darts", "panels", "layers", "draping_clues", "ease_clues", "material_relation", "process", "validation", "risk", "evidence_text")
+    rows = connection.execute("SELECT " + ", ".join(cols) + " FROM pattern_knowledge").fetchall()
+    ranked = []
+    for row in rows:
+        item = dict(zip(cols, row)); blob = " ".join(str(item.get(k, "")) for k in cols)
+        score = sum(3 for term in terms if term in blob)
+        if score:
+            item["score"] = score; ranked.append(item)
+    ranked.sort(key=lambda x: (-x["score"], x["book_id"], x["page"]))
+    return ranked[:int(limit)]
 
 
 def search_model_styling(connection: sqlite3.Connection, query: str, recommendations: dict, rotation_index: int = 0, limit: int = 8) -> dict:

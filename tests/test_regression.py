@@ -93,7 +93,11 @@ bundled_db = Path(__file__).resolve().parents[1] / "show_gown_studio.db"
 assert bundled_db.exists()
 import sqlite3
 with sqlite3.connect(bundled_db) as c:
-    assert c.execute("select count(*) from dress_knowledge").fetchone()[0] == 846
+    assert c.execute("select count(*) from dress_knowledge").fetchone()[0] >= 1063
+    assert c.execute("select count(*) from dress_knowledge where book_id='婚纱礼服100款'").fetchone()[0] == 217
+    assert c.execute("select count(*) from pattern_knowledge").fetchone()[0] == 217
+    pattern_columns = {r[1] for r in c.execute("pragma table_info(pattern_knowledge)")}
+    assert {"seam_lines", "darts", "panels", "layers", "draping_clues", "ease_clues", "validation", "risk"} <= pattern_columns
 assert "PIL" not in source and "cv2" not in source and "Image.open" not in source
 bat = (Path(__file__).resolve().parents[1] / "build.bat").read_text(encoding="utf-8")
 assert all(ord(c) < 128 for c in bat)
