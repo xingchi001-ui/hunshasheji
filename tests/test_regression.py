@@ -70,6 +70,8 @@ with tempfile.TemporaryDirectory() as td:
 source = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
 for token in ["/chat/completions", "/images/generations", "/images/edits", "image[]", "qwen3.7-plus", "gpt-image-2.5"]:
     assert token in source
+assert '"n": 1' in source
+assert '"response_format": "b64_json"' not in source
 assert 'self.start_chat([{"role": "user", "content": parts}], self.analysis_done, self.config.get("vision_model")' in source
 assert 'max_completion_tokens": 8000' in source
 assert 'finish_reason=' in source and '推理字段长度=' in source

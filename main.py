@@ -204,7 +204,9 @@ class ApiWorker(QThread):
             model = self.config.get("image_model") or "gpt-image-2.5"
             prompt = self.payload["prompt"]
             refs = self.payload.get("references", [])
-            common = {"model": model, "prompt": prompt, "size": self.payload.get("size", "1024x1536"), "quality": self.payload.get("quality", "low"), "n": "1", "response_format": "b64_json"}
+            # The connected image endpoint accepts integer n and returns b64_json by default;
+            # response_format is not supported on this route and caused HTTP 500 responses.
+            common = {"model": model, "prompt": prompt, "size": self.payload.get("size", "1024x1024"), "quality": self.payload.get("quality", "low"), "n": 1}
             if refs:
                 self.log.emit(f"请求端点：{base}/images/edits；模型={model}；原始参考图数量={len(refs)}")
                 files = []
