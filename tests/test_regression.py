@@ -43,6 +43,9 @@ win.analysis_output.setPlainText('{"主题":"午夜花园"}')
 win.plan_output.setPlainText("鱼尾礼服设计方案：黑金缎面与珠绣。")
 assert "午夜花园" in win.image_prompt()
 assert "鱼尾" in win.image_prompt()
+assert "中国成年女性真人时装摄影感" in win.image_prompt()
+assert "真实皮肤纹理和毛孔" in win.image_prompt()
+assert "AI伪影" in win.image_prompt()
 win.brief_input.setPlainText("鱼尾 蕾丝 立体裁剪")
 context = win.refresh_knowledge_context()
 assert win.knowledge_matches
@@ -72,6 +75,7 @@ for token in ["/chat/completions", "/images/generations", "/images/edits", "imag
     assert token in source
 assert '"n": 1' in source
 assert '"response_format": "b64_json"' not in source
+assert "MODEL_VARIATIONS" in source and "secrets.choice" in source
 assert 'self.start_chat([{"role": "user", "content": parts}], self.analysis_done, self.config.get("vision_model")' in source
 assert 'max_completion_tokens": 8000' in source
 assert 'finish_reason=' in source and '推理字段长度=' in source

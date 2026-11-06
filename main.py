@@ -3,6 +3,7 @@ import html
 import json
 import mimetypes
 import os
+import secrets
 import sqlite3
 import sys
 from datetime import datetime
@@ -20,6 +21,13 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "秀场礼服设计工作台"
+MODEL_VARIATIONS = (
+    "Chinese woman runway model, softly angular oval face, low textured chignon, calm poised expression, understated neutral makeup",
+    "Chinese woman runway model, delicate oval face, half-up wavy hair with a refined hair clasp, subtle confident gaze, natural makeup",
+    "Chinese woman runway model, elegant heart-shaped face, sleek short sculptural bob, composed editorial expression, clean makeup",
+    "Chinese woman runway model, balanced oval face, long controlled side braid, gentle contemplative expression, restrained makeup",
+    "Chinese woman runway model, softly rounded face, low ponytail with loose natural strands, faint relaxed smile, refined makeup",
+)
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.json"
 DB_PATH = ROOT / "show_gown_studio.db"
@@ -253,6 +261,8 @@ class MainWindow(QMainWindow):
         self.analysis = {}
         self.design_plan = ""
         self.generated_bytes = b""
+        self._model_variation = None
+        self._last_image_prompt = ""
         self.worker = None
         self.setWindowTitle(APP_NAME)
         self.resize(1450, 920)
@@ -429,13 +439,16 @@ class MainWindow(QMainWindow):
         return {"project_name": self.project_name.text(), "analysis": self.analysis, "design_plan": self.plan_output.toPlainText(), "parameters": self.parameters(), "notes": self.work_notes.toPlainText()}
 
     def image_prompt(self):
-        d = self.collect_data(); return f"高级时装秀场礼服效果图。项目：{d['project_name']}。参考图识别摘要：{self.analysis_output.toPlainText()}。AI 设计方案：{d['design_plan']}。最终确认工作台参数：{json.dumps(d['parameters'], ensure_ascii=False)}。数据库设计决策包：{format_decision_package(self.design_recommendations, self.design_audit)}。灵感关键词：{self.keywords.toPlainText()}。补充要求：{self.image_extra.toPlainText()}。请生成一位中国秀场模特的全身专业时装视觉，完整表现礼服结构、比例、面料层次、工艺细节、秀场灯光和全身造型；遵守审查风险并避免不安全结构；不要文字、不要水印、不要品牌标识。"
+        if self._model_variation is None:
+            self._model_variation = secrets.choice(MODEL_VARIATIONS)
+        d = self.collect_data(); return f"高级时装秀场礼服效果图。项目：{d['project_name']}。参考图识别摘要：{self.analysis_output.toPlainText()}。AI 设计方案：{d['design_plan']}。最终确认工作台参数：{json.dumps(d['parameters'], ensure_ascii=False)}。数据库设计决策包：{format_decision_package(self.design_recommendations, self.design_audit)}。灵感关键词：{self.keywords.toPlainText()}。补充要求：{self.image_extra.toPlainText()}。模特与真人质感：{self._model_variation}。必须是中国成年女性真人时装摄影感，面部自然有轻微不对称，真实皮肤纹理和毛孔，真实眼神、手部和身体比例，妆容克制并与礼服风格协调；避免塑料皮肤、蜡像脸、过度磨皮、诡异眼神、僵硬表情、重复脸、AI伪影。请生成全身专业时装视觉，完整表现礼服结构、比例、面料层次、工艺细节、秀场灯光和全身造型；遵守审查风险并避免不安全结构；不要文字、不要水印、不要品牌标识。"
 
     def generate_image(self):
+        self._model_variation = None
         self.refresh_parameter_json()
         if not self.plan_output.toPlainText().strip(): QMessageBox.warning(self, "尚未完成第二步", "请先生成或填写 AI 设计方案。"); self.tabs.setCurrentIndex(1); return
         if not self.config.get("api_key"): QMessageBox.warning(self, "缺少 API Key", "请先在接口设置中填写 API Key。"); self.tabs.setCurrentIndex(4); return
-        payload = {"prompt": self.image_prompt(), "references": self.references, "size": self.image_size.currentText(), "quality": self.image_quality.currentText()}; self.generate_btn.setEnabled(False); self.generate_btn.setText("API 生成中，最长等待 180 秒……"); self.save_image_btn.setEnabled(False); self.save_settings_silent(); self.append_log(f"准备图片请求：模型={self.config.get('image_model')}，参考图数量={len(self.references)}"); self.worker = ApiWorker(self.config, "image", payload); self.worker.log.connect(self.append_log); self.worker.done.connect(self.image_done); self.worker.start()
+        self._last_image_prompt = self.image_prompt(); payload = {"prompt": self._last_image_prompt, "references": self.references, "size": self.image_size.currentText(), "quality": self.image_quality.currentText()}; self.generate_btn.setEnabled(False); self.generate_btn.setText("API 生成中，最长等待 180 秒……"); self.save_image_btn.setEnabled(False); self.save_settings_silent(); self.append_log(f"准备图片请求：模型={self.config.get('image_model')}，参考图数量={len(self.references)}"); self.worker = ApiWorker(self.config, "image", payload); self.worker.log.connect(self.append_log); self.worker.done.connect(self.image_done); self.worker.start()
 
     def image_done(self, result, error, ok):
         self.generate_btn.setEnabled(True); self.generate_btn.setText("调用 gpt-image-2.5 生成效果图")
@@ -445,7 +458,7 @@ class MainWindow(QMainWindow):
     def save_generated_image(self):
         if not self.generated_bytes: return
         path, _ = QFileDialog.getSaveFileName(self, "保存 API 原图", "gown_api_generated.png", "PNG (*.png);;JPEG (*.jpg);;WEBP (*.webp)")
-        if path: Path(path).write_bytes(self.generated_bytes); self.db.record_generation(self.current_project_id, self.config.get("image_model", "gpt-image-2.5"), self.image_prompt(), path, {"recommendations": self.design_recommendations, "audit": self.design_audit}, [row["id"] for row in self.knowledge_matches]); self.status.setText(f"已保存 API 原图 · {Path(path).name}")
+        if path: Path(path).write_bytes(self.generated_bytes); self.db.record_generation(self.current_project_id, self.config.get("image_model", "gpt-image-2.5"), self._last_image_prompt or self.image_prompt(), path, {"recommendations": self.design_recommendations, "audit": self.design_audit}, [row["id"] for row in self.knowledge_matches]); self.status.setText(f"已保存 API 原图 · {Path(path).name}")
 
     def test_text_api(self):
         self.start_chat([{"role": "user", "content": "只回复：文字 API 连接正常"}], lambda result, error, ok: (QMessageBox.information(self, "测试结果", result if ok else error)))
