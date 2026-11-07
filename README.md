@@ -84,7 +84,7 @@ python tests/test_regression.py
 
 03“设计定案”现在展示完整数据库维度，不再只显示廓形、面料和颜色：包括礼服类型、可见部位、廓形、领型、袖型、腰线、裙型、面料、表面细节、结构工艺、场合、色彩、量体线索、设计概念、视觉效果、动态、合体度、风险、灯光、工艺流程、兼容性、设计灵感、视觉证据、不确定性，以及分割线、省道、拼片、层级、立体裁剪、放量、面料结构关系、纸样流程、验证和纸样风险。模特区单独展示发型、头饰、表情、视线、姿态、动态和兼容性，并将可见动作整理成专业术语，例如“行走（走步）”“转身”“坐姿”“侧身”“回眸”“屈膝”“抬臂”“摆动”“展开”等；数据库没有明确的字段会显示“数据库记录未明确”，不会随机补全。
 
-03 锁定后还会生成 `pattern_reference_spec.json`。04 新增“生成打版参考包（14视图）”，按数据库证据顺序逐张调用图片 API：正面、背面、左右侧面、行走、45/90 度转身、背影行走、头纱/裙摆展开，以及胸腰、侧腰臀、领口袖窿、裙摆拖尾和内外层结构近景。每张独立图保留原文件，同时用本地确定性拼接生成 `00_overview_contact_sheet.png`；生成失败的视图写入 `pattern_reference_manifest.json`，可以断点补生成。
+03 锁定后还会生成 `pattern_reference_spec.json`。04 新增“生成打版参考包（14视图）”，先确定一张正面母版，再让背面、左右侧面、行走、45/90 度转身、背影行走、头纱/裙摆展开，以及胸腰、侧腰臀、领口袖窿、裙摆拖尾和内外层结构近景全部引用同一张母版进行图片编辑；不再独立随机生成不同礼服。每张独立图保留原文件，同时用本地确定性拼接生成 `00_overview_contact_sheet.png`；生成失败的视图写入 `pattern_reference_manifest.json`，可以断点补生成。旧版非母版包会在新生成时自动清理。
 
 On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, bundles the SQLite database and local visual-data folder, and generates:
 

@@ -315,7 +315,7 @@ class PatternPackWorker(QThread):
 
     def view_prompt(self, view):
         shared = json.dumps(self.compact_spec(), ensure_ascii=False, indent=2)
-        return f"服装打版视觉参考图，不是纸样线稿，不添加文字和尺寸标注。只执行以下已锁定礼服规格，不改变廓形、面料、颜色、工艺、层级、模特、发型和姿态：\n{shared}\n当前视图：{view['label']}。打版用途：{view['purpose']}。动作/构图要求：{view['motion']}。同一中国成年女性真人模特、同一套礼服、同一灯光基准，完整表现结构线、面料层级和下摆；不可见的缝份、精确尺寸、省量、布纹和内部支撑不得臆造；真实时装摄影，避免 AI 伪影、文字、水印和品牌标识。"
+        return f"服装打版视觉参考图，不是纸样线稿，不添加文字和尺寸标注。只执行以下已锁定礼服规格，不改变廓形、面料、颜色、工艺、层级、模特、发型和姿态：\n{shared}\n当前视图：{view['label']}。打版用途：{view['purpose']}。动作/构图要求：{view['motion']}。如果提供了正面母版参考图，必须保持同一位模特和同一套礼服，只改变视角或动作，不得重新设计、换色、换面料、增减袖子、改变领型或改变装饰位置。同一中国成年女性真人模特、同一套礼服、同一灯光基准，完整表现结构线、面料层级和下摆；不可见的缝份、精确尺寸、省量、布纹和内部支撑不得臆造；真实时装摄影，避免 AI 伪影、文字、水印和品牌标识。"
 
     def create_contact_sheet(self, paths):
         try:
@@ -337,21 +337,23 @@ class PatternPackWorker(QThread):
 
     def run(self):
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        created, failed = [], []
+        created, failed = [], []; anchor_path = None
         total = len(PATTERN_VIEWS)
         for index, view in enumerate(PATTERN_VIEWS, start=1):
             self.progress.emit(index - 1, f"正在生成 {view['id']} · {view['label']}")
             try:
                 path = self.output_dir / f"{view['id']}.png"
                 if path.exists() and path.stat().st_size > 0:
-                    created.append(str(path)); self.log.emit(f"跳过已有文件：{view['id']}"); self.progress.emit(index, f"已跳过 {index}/{total}：{view['label']}"); continue
-                worker = ApiWorker(self.config, "image", {"prompt": self.view_prompt(view), "references": [], "size": "1024x1024", "quality": "low"})
+                    created.append(str(path)); anchor_path = anchor_path or (path if index == 1 else anchor_path); self.log.emit(f"跳过已有文件：{view['id']}"); self.progress.emit(index, f"已跳过 {index}/{total}：{view['label']}"); continue
+                refs = [str(anchor_path)] if anchor_path else []
+                worker = ApiWorker(self.config, "image", {"prompt": self.view_prompt(view), "references": refs, "size": "1024x1024", "quality": "low"})
                 data = worker.call_api(); path.write_bytes(data); created.append(str(path)); self.log.emit(f"完成：{view['id']}，字节={len(data)}")
+                anchor_path = anchor_path or path
             except Exception as exc:
                 failed.append({"view": view["id"], "label": view["label"], "error": str(exc)}); self.log.emit(f"失败：{view['id']}：{exc}")
             self.progress.emit(index, f"已处理 {index}/{total}：{view['label']}")
         overview = self.create_contact_sheet(created) if created else ""
-        manifest = {"spec_version": 1, "created_at": datetime.now().isoformat(timespec="seconds"), "views": list(PATTERN_VIEWS), "created_files": created, "failed_views": failed, "overview": overview, "source_spec": str(PATTERN_SPEC_PATH)}
+        manifest = {"spec_version": 1, "created_at": datetime.now().isoformat(timespec="seconds"), "consistency_mode": "anchor_reference", "anchor_view": "01_front_static", "views": list(PATTERN_VIEWS), "created_files": created, "failed_views": failed, "overview": overview, "source_spec": str(PATTERN_SPEC_PATH)}
         (self.output_dir / "pattern_reference_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         self.done.emit(manifest)
 
@@ -532,7 +534,16 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "最终设计未锁定", "请先在 03 锁定最终设计。"); self.tabs.setCurrentIndex(2); return
         if not self.config.get("api_key"):
             QMessageBox.warning(self, "缺少 API Key", "请先在接口设置中填写 API Key。"); self.tabs.setCurrentIndex(4); return
-        PATTERN_PACK_DIR.mkdir(parents=True, exist_ok=True); self.pattern_pack_status.setText("打版参考包：准备生成 14 张独立视图……"); self.set_workflow_state("image", "打版参考包生成中"); self.pattern_pack_worker = PatternPackWorker(self.config, self.final_design_spec, PATTERN_PACK_DIR); self.pattern_pack_worker.progress.connect(lambda n, text: self.pattern_pack_status.setText(f"打版参考包：{text}")); self.pattern_pack_worker.log.connect(self.append_log); self.pattern_pack_worker.done.connect(self.pattern_pack_done); self.pattern_pack_worker.start()
+        PATTERN_PACK_DIR.mkdir(parents=True, exist_ok=True); old_manifest = PATTERN_PACK_DIR / "pattern_reference_manifest.json"
+        if old_manifest.exists():
+            try:
+                if json.loads(old_manifest.read_text(encoding="utf-8")).get("consistency_mode") != "anchor_reference":
+                    for old_png in PATTERN_PACK_DIR.glob("*.png"): old_png.unlink()
+                    old_manifest.unlink()
+                    self.append_log("检测到旧版独立随机视图包，已清理并改用同一正面母版生成")
+            except Exception:
+                pass
+        self.pattern_pack_status.setText("打版参考包：准备生成 14 张同一礼服视图……"); self.set_workflow_state("image", "打版参考包生成中"); self.pattern_pack_worker = PatternPackWorker(self.config, self.final_design_spec, PATTERN_PACK_DIR); self.pattern_pack_worker.progress.connect(lambda n, text: self.pattern_pack_status.setText(f"打版参考包：{text}")); self.pattern_pack_worker.log.connect(self.append_log); self.pattern_pack_worker.done.connect(self.pattern_pack_done); self.pattern_pack_worker.start()
 
     def pattern_pack_done(self, manifest):
         self.pattern_pack_manifest = manifest; failed = len(manifest.get("failed_views", [])); created = len(manifest.get("created_files", [])); self.pattern_pack_status.setText(f"打版参考包：完成 {created} 张，失败 {failed} 张；总览图已生成" if manifest.get("overview") else f"打版参考包：完成 {created} 张，失败 {failed} 张"); self.set_workflow_state("image", "打版包待验收"); self.status.setText(f"打版参考包已生成：{PATTERN_PACK_DIR.name}；独立图 {created} 张")
