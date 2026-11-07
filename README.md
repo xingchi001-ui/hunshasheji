@@ -76,6 +76,12 @@ python tests/test_regression.py
 
 ## Windows standalone EXE build
 
+### 四阶段可控工作流
+
+当前 GUI 已改为必须逐步确认的单向流程：01“确认灵感方向”后才能检索 02；02“接受数据库决策”后才能进入 03；03“锁定最终设计”后生成根目录 `final_design_spec.json`，04 只读取这份锁定规格；图片返回后还必须点击“图片验收通过”才能保存为最终结果。解锁上游模块会自动撤销下游生成资格，避免旧提示词继续生成。
+
+图片提示词不再直接拼接四个页面的原始内容，而是由 `final_design_spec.json` 和 04 的摄影补充要求组成。数据库证据、纸样证据、模特造型、人工覆盖项、风险审查和来源页都会写入最终规格及生成审计。
+
 On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, bundles the SQLite database and local visual-data folder, and generates:
 
 ```text

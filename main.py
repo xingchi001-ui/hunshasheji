@@ -24,6 +24,7 @@ ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) el
 RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", ROOT))
 CONFIG_PATH = ROOT / "config.json"
 DB_PATH = ROOT / "show_gown_studio.db"
+FINAL_SPEC_PATH = ROOT / "final_design_spec.json"
 TRAINING_DATA_PATH = Path(os.getenv("DRESS_TRAINING_DATA", ROOT / "data" / "dress_training" / "segments_all.jsonl"))
 
 
@@ -288,6 +289,12 @@ class MainWindow(QMainWindow):
         self.design_audit = {}
         self.model_styling_decision = {}
         self.pattern_matches = []
+        self.workflow_status = {"inspiration": "未开始", "database": "未开始", "design": "未开始", "image": "未开始"}
+        self.inspiration_card = {}
+        self.database_decision_confirmed = False
+        self.final_design_spec = {}
+        self.final_design_locked = False
+        self.image_review_status = "未验收"
         self.current_project_id = None
         self.references = []
         self.analysis = {}
@@ -340,14 +347,14 @@ class MainWindow(QMainWindow):
         head = QHBoxLayout(); title = QLabel(APP_NAME); title.setObjectName("title"); head.addWidget(title); head.addStretch(); self.status = QLabel("全链路本地工作区"); self.status.setObjectName("muted"); head.addWidget(self.status); outer.addLayout(head)
         steps = QHBoxLayout()
         self.step_labels = []
-        for text in ["01 灵感与参考", "02 AI 设计助理", "03 设计工作台", "04 API 效果图"]:
+        for text in ["01 灵感采集", "02 数据库决策", "03 设计定案", "04 图片执行"]:
             label = QLabel(text); label.setObjectName("step"); self.step_labels.append(label); steps.addWidget(label)
         outer.addLayout(steps)
         self.tabs = QTabWidget(); outer.addWidget(self.tabs)
-        self.tabs.addTab(self.reference_tab(), "01 灵感与参考")
-        self.tabs.addTab(self.assistant_tab(), "02 AI 设计助理")
-        self.tabs.addTab(self.workbench_tab(), "03 设计工作台")
-        self.tabs.addTab(self.image_tab(), "04 API 效果图")
+        self.tabs.addTab(self.reference_tab(), "01 灵感采集")
+        self.tabs.addTab(self.assistant_tab(), "02 数据库决策")
+        self.tabs.addTab(self.workbench_tab(), "03 设计定案")
+        self.tabs.addTab(self.image_tab(), "04 图片执行")
         self.tabs.addTab(self.settings_tab(), "接口设置")
         bottom = QHBoxLayout(); bottom.addStretch(); save = QPushButton("保存到 SQLite"); save.clicked.connect(self.save_project); bottom.addWidget(save); export = QPushButton("导出设计单"); export.clicked.connect(self.export_brief); bottom.addWidget(export); outer.addLayout(bottom)
         self.tabs.currentChanged.connect(self.update_steps)
@@ -355,11 +362,11 @@ class MainWindow(QMainWindow):
     def reference_tab(self):
         tab = QWidget(); layout = QHBoxLayout(tab)
         left = QVBoxLayout(); box = QGroupBox("灵感与参考图"); bv = QVBoxLayout(box); add = QPushButton("导入参考图"); add.clicked.connect(self.add_reference); bv.addWidget(add); self.ref_list = QListWidget(); bv.addWidget(self.ref_list); left.addWidget(box)
-        self.keywords = QTextEdit("午夜花园\n液态金属\n雕塑感肩线\n轻盈透明层次\n远看强轮廓，近看细工艺"); left.addWidget(QLabel("灵感关键词")); left.addWidget(self.keywords); layout.addLayout(left, 1)
+        self.keywords = QTextEdit("午夜花园\n液态金属\n雕塑感肩线\n轻盈透明层次\n远看强轮廓，近看细工艺"); left.addWidget(QLabel("灵感关键词")); left.addWidget(self.keywords); self.inspiration_status = QLabel("01 状态：未开始"); self.inspiration_status.setObjectName("muted"); left.addWidget(self.inspiration_status); inspiration_row = QHBoxLayout(); extract = QPushButton("提炼灵感方向"); extract.clicked.connect(self.extract_inspiration); inspiration_row.addWidget(extract); confirm = QPushButton("确认灵感方向"); confirm.clicked.connect(self.confirm_inspiration); inspiration_row.addWidget(confirm); unlock = QPushButton("解锁并修改"); unlock.clicked.connect(self.unlock_inspiration); inspiration_row.addWidget(unlock); left.addLayout(inspiration_row); self.inspiration_output = QTextEdit(); self.inspiration_output.setReadOnly(True); self.inspiration_output.setPlaceholderText("确认后生成灵感方向卡，作为 02 数据库决策的输入。"); left.addWidget(self.inspiration_output); layout.addLayout(left, 1)
         right = QVBoxLayout(); intro = QLabel("第一步：上传参考图后，让多模态模型识别色彩、廓形、面料、工艺、氛围、构图和设计平台维度。程序只读取原始字节并通过 API 发送，不做本地图像识别或静态图像处理。") ; intro.setWordWrap(True); intro.setObjectName("muted"); right.addWidget(intro); self.analyze_btn = QPushButton("调用多模态模型识别参考图"); self.analyze_btn.clicked.connect(self.analyze_references); right.addWidget(self.analyze_btn); self.analysis_output = QTextEdit(); self.analysis_output.setPlaceholderText("多模态识别结果会以 JSON/中文摘要显示在这里，可人工修改后进入下一步。"); right.addWidget(self.analysis_output, 2); right.addWidget(QLabel("实时 API 日志（不记录 API Key）")); self.live_log = QTextEdit(); self.live_log.setReadOnly(True); self.live_log.setPlaceholderText("点击识别后，这里会显示端点、模型、HTTP 状态、响应结构和具体错误。"); self.live_log.setMaximumHeight(190); right.addWidget(self.live_log); layout.addLayout(right, 2); return tab
 
     def assistant_tab(self):
-        tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第二步：数据库先形成设计决策包，再由 AI 编排原创方案。生成后请查看结构化推荐与风险审查。"); intro.setObjectName("muted"); layout.addWidget(intro); self.brief_input = QTextEdit(); self.brief_input.setPlaceholderText("补充设计目标，例如：希望更适合闭幕秀，强调远距离轮廓和灯光下的闪烁层次……"); layout.addWidget(self.brief_input); row = QHBoxLayout(); self.knowledge_btn = QPushButton("检索并生成设计决策包"); self.knowledge_btn.clicked.connect(self.refresh_knowledge_context); row.addWidget(self.knowledge_btn); self.plan_btn = QPushButton("生成 AI 设计方案"); self.plan_btn.clicked.connect(self.generate_plan); row.addWidget(self.plan_btn); apply = QPushButton("将方案写入设计工作台"); apply.setProperty("secondary", True); apply.clicked.connect(self.apply_plan); row.addWidget(apply); row.addStretch(); layout.addLayout(row); self.knowledge_output = QTextEdit(); self.knowledge_output.setReadOnly(True); self.knowledge_output.setPlaceholderText("这里显示分层检索、结构化推荐、来源证据和风险审查。"); layout.addWidget(QLabel("数据库设计决策包：推荐、证据与审查")); layout.addWidget(self.knowledge_output, 2); self.plan_output = QTextEdit(); self.plan_output.setPlaceholderText("AI 设计助理输出：概念、廓形、面料、工艺、秀场动态、试衣检查和图片生成提示词。"); layout.addWidget(self.plan_output, 2); return tab
+        tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第二步：数据库先形成设计决策包，再由 AI 编排原创方案。接受数据库决策后才能进入 03。"); intro.setObjectName("muted"); layout.addWidget(intro); self.brief_input = QTextEdit(); self.brief_input.setPlaceholderText("补充设计目标，例如：希望更适合闭幕秀，强调远距离轮廓和灯光下的闪烁层次……"); layout.addWidget(self.brief_input); self.database_status = QLabel("02 状态：未开始"); self.database_status.setObjectName("muted"); layout.addWidget(self.database_status); row = QHBoxLayout(); self.knowledge_btn = QPushButton("检索并生成设计决策包"); self.knowledge_btn.clicked.connect(self.refresh_knowledge_context); row.addWidget(self.knowledge_btn); accept = QPushButton("接受数据库决策"); accept.clicked.connect(self.accept_database_decision); row.addWidget(accept); self.plan_btn = QPushButton("生成 AI 设计方案"); self.plan_btn.clicked.connect(self.generate_plan); row.addWidget(self.plan_btn); apply = QPushButton("将方案写入设计工作台"); apply.setProperty("secondary", True); apply.clicked.connect(self.apply_plan); row.addWidget(apply); row.addStretch(); layout.addLayout(row); self.knowledge_output = QTextEdit(); self.knowledge_output.setReadOnly(True); self.knowledge_output.setPlaceholderText("这里显示分层检索、结构化推荐、来源证据和风险审查。"); layout.addWidget(QLabel("数据库设计决策包：推荐、证据与审查")); layout.addWidget(self.knowledge_output, 2); self.plan_output = QTextEdit(); self.plan_output.setPlaceholderText("AI 设计助理输出：概念、廓形、面料、工艺、秀场动态、试衣检查和图片生成提示词。"); layout.addWidget(self.plan_output, 2); return tab
 
     def workbench_tab(self):
         tab = QWidget(); layout = QHBoxLayout(tab); left = QVBoxLayout(); meta = QGroupBox("项目与结构化参数"); mf = QFormLayout(meta); self.project_name = QLineEdit("2026 春夏 · 午夜花园"); self.client = QLineEdit("Look 01"); self.occasion = QLineEdit("品牌发布秀 / 闭幕造型"); mf.addRow("项目名称", self.project_name); mf.addRow("造型编号", self.client); mf.addRow("使用场景", self.occasion); left.addWidget(meta)
@@ -367,10 +374,10 @@ class MainWindow(QMainWindow):
         measures = QGroupBox("量体数据"); grid = QGridLayout(measures); self.height = self.measure(175); self.bust = self.measure(84); self.waist = self.measure(64); self.hip = self.measure(90); widgets = [("身高", self.height), ("胸围", self.bust), ("腰围", self.waist), ("臀围", self.hip)];
         for i, (name, widget) in enumerate(widgets): grid.addWidget(QLabel(name), i // 2, (i % 2) * 2); grid.addWidget(widget, i // 2, (i % 2) * 2 + 1)
         left.addWidget(measures); layout.addLayout(left, 1)
-        right = QVBoxLayout(); info = QLabel("第三步：AI 方案落地为可修改的数据库参数。只有确认这里的结构化参数后，第四步才会调用图片 API。") ; info.setWordWrap(True); info.setObjectName("muted"); right.addWidget(info); self.knowledge_status = QLabel("知识库链路：等待检索"); self.knowledge_status.setObjectName("muted"); right.addWidget(self.knowledge_status); self.parameter_json = QTextEdit(); self.parameter_json.setReadOnly(True); right.addWidget(QLabel("当前参数 JSON")); right.addWidget(self.parameter_json, 2); refresh = QPushButton("刷新结构化参数"); refresh.clicked.connect(self.refresh_parameter_json); right.addWidget(refresh); layout.addLayout(right, 1); return tab
+        right = QVBoxLayout(); info = QLabel("第三步：AI 方案落地为可修改的最终设计参数。必须锁定最终设计后，第四步才会调用图片 API。"); info.setWordWrap(True); info.setObjectName("muted"); right.addWidget(info); self.knowledge_status = QLabel("知识库链路：等待检索"); self.knowledge_status.setObjectName("muted"); right.addWidget(self.knowledge_status); self.design_status = QLabel("03 状态：未开始"); self.design_status.setObjectName("muted"); right.addWidget(self.design_status); self.parameter_json = QTextEdit(); self.parameter_json.setReadOnly(True); right.addWidget(QLabel("当前参数 JSON")); right.addWidget(self.parameter_json, 2); refresh = QPushButton("刷新结构化参数"); refresh.clicked.connect(self.refresh_parameter_json); right.addWidget(refresh); design_row = QHBoxLayout(); draft = QPushButton("保存设计草稿"); draft.clicked.connect(self.save_design_draft); design_row.addWidget(draft); lock = QPushButton("锁定最终设计"); lock.clicked.connect(self.lock_final_design); design_row.addWidget(lock); unlock = QPushButton("解锁并修改"); unlock.clicked.connect(self.unlock_final_design); design_row.addWidget(unlock); right.addLayout(design_row); layout.addLayout(right, 1); return tab
 
     def image_tab(self):
-        tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第四步：根据已确认的设计工作台参数、AI 方案、灵感关键词和原始参考图调用图片 API。无参考图调用 generations，有参考图调用 edits。") ; intro.setWordWrap(True); intro.setObjectName("muted"); layout.addWidget(intro); controls = QGroupBox("效果图设置"); cf = QFormLayout(controls); self.image_extra = QTextEdit(); self.image_extra.setPlaceholderText("补充视角、舞台灯光、模特姿态、摄影风格等"); self.image_size = self.combo(["1024x1536", "1024x1024", "1536x1024"]); self.image_quality = self.combo(["low", "medium", "high"]); cf.addRow("补充提示词", self.image_extra); cf.addRow("画幅", self.image_size); cf.addRow("质量", self.image_quality); layout.addWidget(controls); row = QHBoxLayout(); self.generate_btn = QPushButton("调用 gpt-image-2.5 生成效果图"); self.generate_btn.clicked.connect(self.generate_image); row.addWidget(self.generate_btn); self.save_image_btn = QPushButton("保存 API 原图"); self.save_image_btn.setProperty("secondary", True); self.save_image_btn.setEnabled(False); self.save_image_btn.clicked.connect(self.save_generated_image); row.addWidget(self.save_image_btn); row.addStretch(); layout.addLayout(row); self.generated_label = QLabel("API 返回的原图将在这里显示"); self.generated_label.setAlignment(Qt.AlignCenter); self.generated_label.setMinimumHeight(420); self.generated_label.setStyleSheet("background:#fffdf9;border:1px solid #ddd4c8;border-radius:8px;color:#81766d;"); layout.addWidget(self.generated_label, 1); return tab
+        tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第四步：只执行 03 已锁定的 final_design_spec.json。这里可以补充摄影要求，但不能改动最终廓形、面料、颜色、纸样和模特决策。") ; intro.setWordWrap(True); intro.setObjectName("muted"); layout.addWidget(intro); self.image_status = QLabel("04 状态：未开始"); self.image_status.setObjectName("muted"); layout.addWidget(self.image_status); controls = QGroupBox("效果图设置"); cf = QFormLayout(controls); self.image_extra = QTextEdit(); self.image_extra.setPlaceholderText("只填写视角、舞台灯光、摄影风格等执行要求；不要修改廓形和面料"); self.image_size = self.combo(["1024x1536", "1024x1024", "1536x1024"]); self.image_quality = self.combo(["low", "medium", "high"]); cf.addRow("摄影补充要求", self.image_extra); cf.addRow("画幅", self.image_size); cf.addRow("质量", self.image_quality); layout.addWidget(controls); row = QHBoxLayout(); check = QPushButton("检查最终设计"); check.clicked.connect(self.check_final_design); row.addWidget(check); self.generate_btn = QPushButton("调用 gpt-image-2.5 生成效果图"); self.generate_btn.clicked.connect(self.generate_image); row.addWidget(self.generate_btn); self.save_image_btn = QPushButton("保存 API 原图"); self.save_image_btn.setProperty("secondary", True); self.save_image_btn.setEnabled(False); self.save_image_btn.clicked.connect(self.save_generated_image); row.addWidget(self.save_image_btn); row.addStretch(); layout.addLayout(row); review = QHBoxLayout(); self.pass_review_btn = QPushButton("图片验收通过"); self.pass_review_btn.clicked.connect(self.accept_image_review); review.addWidget(self.pass_review_btn); self.fail_review_btn = QPushButton("图片不通过，返回 03"); self.fail_review_btn.clicked.connect(self.reject_image_review); review.addWidget(self.fail_review_btn); layout.addLayout(review); self.generated_label = QLabel("API 返回的原图将在这里显示"); self.generated_label.setAlignment(Qt.AlignCenter); self.generated_label.setMinimumHeight(420); self.generated_label.setStyleSheet("background:#fffdf9;border:1px solid #ddd4c8;border-radius:8px;color:#81766d;"); layout.addWidget(self.generated_label, 1); return tab
 
     def settings_tab(self):
         tab = QWidget(); layout = QVBoxLayout(tab); box = QGroupBox("API 设置"); form = QFormLayout(box); self.base_url = QLineEdit(self.config["api_base_url"]); self.api_key = QLineEdit(self.config.get("api_key", "")); self.api_key.setEchoMode(QLineEdit.Password); self.vision_model = self.model_combo(["MiniMax-M3.1", "qwen3.7-plus", "qwen3.8-max", "glm-5.3-flash"] , self.config.get("vision_model", "MiniMax-M3.1")); self.text_model = self.model_combo(["deepseek-v4.1-flash", "deepseek-v4-flash", "qwen3.7-plus", "MiniMax-M3.1-flash", "glm-5.3-flash", "kimi-k2.8"], self.config.get("text_model", "deepseek-v4.1-flash")); self.image_model = self.model_combo(["gpt-image-2.5", "gpt-image-2", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare"], self.config.get("image_model", "gpt-image-2.5")); form.addRow("Base URL", self.base_url); form.addRow("API Key", self.api_key); form.addRow("多模态模型", self.vision_model); form.addRow("文字模型", self.text_model); form.addRow("图片模型", self.image_model); layout.addWidget(box); row = QHBoxLayout(); save = QPushButton("保存 API 设置"); save.clicked.connect(self.save_settings); row.addWidget(save); test = QPushButton("测试文字 API"); test.setProperty("secondary", True); test.clicked.connect(self.test_text_api); row.addWidget(test); row.addStretch(); layout.addLayout(row); note = QLabel("API Key 只写入当前目录 config.json；参考图原始字节直接发送到 API，生成图片直接保存 API 返回内容。") ; note.setWordWrap(True); note.setObjectName("muted"); layout.addWidget(note); layout.addStretch(); return tab
@@ -389,6 +396,60 @@ class MainWindow(QMainWindow):
         for path in paths:
             self.references.append(path); item = QListWidgetItem(Path(path).name); item.setToolTip(path); self.ref_list.addItem(item)
         self.update_steps()
+
+    def set_workflow_state(self, key, state):
+        self.workflow_status[key] = state
+        labels = {"inspiration": getattr(self, "inspiration_status", None), "database": getattr(self, "database_status", None), "design": getattr(self, "design_status", None), "image": getattr(self, "image_status", None)}
+        if labels.get(key):
+            labels[key].setText({"inspiration": "01", "database": "02", "design": "03", "image": "04"}[key] + f" 状态：{state}")
+
+    def extract_inspiration(self):
+        terms = [x.strip() for x in self.keywords.toPlainText().replace("，", "\n").replace(",", "\n").splitlines() if x.strip()]
+        self.inspiration_card = {"theme": terms[0] if terms else "未命名主题", "mood": terms[1:4], "visual_keywords": terms, "silhouette_intent": "远看轮廓明确，近看工艺可见", "stage_intent": self.occasion.text() if hasattr(self, "occasion") else "秀场造型", "avoid": ["文字", "水印", "品牌标识", "明显 AI 伪影"], "reference_analysis": self.analysis_output.toPlainText().strip()}
+        self.inspiration_output.setPlainText(json.dumps(self.inspiration_card, ensure_ascii=False, indent=2)); self.set_workflow_state("inspiration", "待确认"); self.set_workflow_state("database", "未开始"); self.database_decision_confirmed = False; self.set_workflow_state("design", "未开始"); self.final_design_locked = False; self.set_workflow_state("image", "未开始")
+
+    def confirm_inspiration(self):
+        if not self.inspiration_card: self.extract_inspiration()
+        self.set_workflow_state("inspiration", "已确认"); self.append_log("01 灵感方向已确认，允许进入 02 数据库决策")
+
+    def unlock_inspiration(self):
+        self.set_workflow_state("inspiration", "编辑中"); self.database_decision_confirmed = False; self.set_workflow_state("database", "需要重新确认"); self.final_design_locked = False; self.set_workflow_state("design", "需要重新确认"); self.set_workflow_state("image", "需要重新确认")
+
+    def accept_database_decision(self):
+        if not self.knowledge_matches:
+            QMessageBox.warning(self, "尚未检索数据库", "请先点击“检索并生成设计决策包”。"); return
+        if self.workflow_status.get("inspiration") not in ("已确认", "已锁定"):
+            QMessageBox.warning(self, "灵感方向未确认", "请先在 01 点击“确认灵感方向”。"); return
+        self.database_decision_confirmed = True; self.set_workflow_state("database", "已确认"); self.set_workflow_state("design", "编辑中"); self.append_log("02 数据库设计决策已接受，允许进入 03 设计定案")
+
+    def save_design_draft(self):
+        self.refresh_parameter_json(); self.set_workflow_state("design", "待确认"); self.append_log("03 设计参数已保存为草稿")
+
+    def build_final_design_spec(self):
+        return {"spec_version": 1, "created_at": datetime.now().isoformat(timespec="seconds"), "inspiration_card": self.inspiration_card, "design_plan": self.plan_output.toPlainText().strip(), "parameters": self.parameters(), "database_decision": self.design_recommendations, "pattern_evidence": self.pattern_matches, "model_styling": self.model_styling_decision, "audit": self.design_audit, "references": [Path(p).name for p in self.references], "designer_overrides": {"parameters": self.parameters()}}
+
+    def lock_final_design(self):
+        if not self.database_decision_confirmed:
+            QMessageBox.warning(self, "数据库决策未确认", "请先在 02 接受数据库决策。"); return
+        if not self.plan_output.toPlainText().strip():
+            QMessageBox.warning(self, "缺少设计方案", "请先生成或填写设计方案。"); return
+        self.refresh_parameter_json(); self.final_design_spec = self.build_final_design_spec(); FINAL_SPEC_PATH.write_text(json.dumps(self.final_design_spec, ensure_ascii=False, indent=2), encoding="utf-8"); self.final_design_locked = True; self.set_workflow_state("design", "已锁定"); self.set_workflow_state("image", "待检查"); self.append_log(f"03 最终设计已锁定：{FINAL_SPEC_PATH.name}"); self.tabs.setCurrentIndex(3)
+
+    def unlock_final_design(self):
+        self.final_design_locked = False; self.set_workflow_state("design", "编辑中"); self.set_workflow_state("image", "需要重新确认"); self.append_log("03 已解锁，04 生成资格已撤销")
+
+    def check_final_design(self):
+        if not self.final_design_locked or not self.final_design_spec:
+            QMessageBox.warning(self, "最终设计未锁定", "请返回 03 锁定最终设计后再检查。"); self.tabs.setCurrentIndex(2); return
+        self.set_workflow_state("image", "可生成"); self.status.setText("最终设计规格已检查，可调用图片 API")
+
+    def accept_image_review(self):
+        if not self.generated_bytes:
+            QMessageBox.warning(self, "没有生成图片", "请先生成图片。"); return
+        self.image_review_status = "已验收"; self.set_workflow_state("image", "已验收"); self.status.setText("图片已通过人工/视觉验收，可保存为最终结果")
+
+    def reject_image_review(self):
+        self.image_review_status = "未通过"; self.set_workflow_state("image", "未通过，返回 03"); self.tabs.setCurrentIndex(2); self.append_log("图片验收未通过，请修改 03 最终设计后重新锁定")
 
     def save_settings(self):
         self.config.update({"api_base_url": self.base_url.text().strip(), "api_key": self.api_key.text().strip(), "vision_model": self.vision_model.currentText().strip(), "text_model": self.text_model.currentText().strip(), "image_model": self.image_model.currentText().strip()}); save_config(self.config); self.status.setText("接口设置已保存到 config.json"); QMessageBox.information(self, "已保存", "API 设置已保存到当前目录 config.json。")
@@ -430,6 +491,10 @@ class MainWindow(QMainWindow):
         self.analysis_output.setPlainText(result); self.analysis = {"raw": result}; self.status.setText("第一步已完成：参考图识别结果已生成"); self.update_steps()
 
     def generate_plan(self):
+        if self.workflow_status.get("inspiration") not in ("已确认", "已锁定"):
+            QMessageBox.warning(self, "灵感方向未确认", "请先在 01 点击“提炼灵感方向”并确认。"); self.tabs.setCurrentIndex(0); return
+        if not self.database_decision_confirmed:
+            QMessageBox.warning(self, "数据库决策未确认", "请先检索并接受 02 数据库决策。"); return
         analysis = self.analysis_output.toPlainText().strip() or "尚未完成参考图识别，请基于用户关键词先给出初步方案。"
         context = self.refresh_knowledge_context()
         package = format_decision_package(self.design_recommendations, self.design_audit)
@@ -437,7 +502,9 @@ class MainWindow(QMainWindow):
         self.plan_btn.setEnabled(False); self.plan_btn.setText("AI 方案生成中……"); self.start_chat([{"role": "user", "content": prompt}], self.plan_done)
 
     def refresh_knowledge_context(self):
-        query = " ".join([self.analysis_output.toPlainText(), self.keywords.toPlainText(), self.brief_input.toPlainText()])
+        if self.workflow_status.get("inspiration") not in ("已确认", "已锁定"):
+            self.set_workflow_state("database", "等待 01 确认")
+        query = " ".join([json.dumps(self.inspiration_card, ensure_ascii=False), self.analysis_output.toPlainText(), self.brief_input.toPlainText()])
         self.knowledge_matches = self.db.search_dress_knowledge(query, limit=8)
         self.pattern_matches = self.db.search_pattern_knowledge(query, limit=8)
         context = format_context(self.knowledge_matches) if self.knowledge_matches else "本地礼服知识库暂无匹配记录；请基于通用服装设计原则完成方案。"
@@ -466,6 +533,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, "knowledge_status"):
             self.knowledge_status.setText(f"知识库链路：已命中礼服 {len(self.knowledge_matches)} 条 · 纸样 {len(self.pattern_matches)} 条 · 模特造型已接管")
         self.append_log(f"数据库决策：礼服={len(self.knowledge_matches)}，纸样={len(self.pattern_matches)}，模特造型=1")
+        if hasattr(self, "database_status") and not self.database_decision_confirmed:
+            self.set_workflow_state("database", "待确认")
         styling_text = "\n数据库模特造型决策：\n" + json.dumps(self.model_styling_decision, ensure_ascii=False, indent=2)
         pattern_text = "\n数据库纸样决策证据：\n" + json.dumps(self.design_recommendations.get("pattern_decision", {}), ensure_ascii=False, indent=2)
         return context + styling_text + pattern_text + "\n结构化设计决策包：\n" + decision_text
@@ -478,7 +547,7 @@ class MainWindow(QMainWindow):
     def apply_plan(self):
         text = self.plan_output.toPlainText().strip()
         if not text: QMessageBox.warning(self, "没有设计方案", "请先生成或填写 AI 设计方案。"); return
-        self.design_plan = text; self.status.setText("方案已写入工作台，可继续确认参数"); self.tabs.setCurrentIndex(2); self.refresh_parameter_json(); self.update_steps()
+        self.design_plan = text; self.set_workflow_state("design", "编辑中"); self.final_design_locked = False; self.set_workflow_state("image", "等待 03 锁定"); self.status.setText("方案已写入工作台，请保存草稿并锁定最终设计"); self.tabs.setCurrentIndex(2); self.refresh_parameter_json(); self.update_steps()
 
     def parameters(self):
         return {"silhouette": self.silhouette.currentText(), "neckline": self.neckline.currentText(), "sleeve": self.sleeve.currentText(), "fabric": self.fabric.currentText(), "main_color": self.main_color.currentText(), "accent_color": self.accent.currentText(), "train": self.train.currentText(), "craft": self.craft.text(), "measurements": {"height_cm": self.height.value(), "bust_cm": self.bust.value(), "waist_cm": self.waist.value(), "hip_cm": self.hip.value()}}
@@ -490,33 +559,39 @@ class MainWindow(QMainWindow):
         return {"project_name": self.project_name.text(), "analysis": self.analysis, "design_plan": self.plan_output.toPlainText(), "parameters": self.parameters(), "notes": self.work_notes.toPlainText()}
 
     def image_prompt(self):
-        d = self.collect_data(); styling = json.dumps(self.model_styling_decision, ensure_ascii=False, indent=2); pattern = json.dumps(self.design_recommendations.get("pattern_decision", {}), ensure_ascii=False, indent=2); acceptance = json.dumps(self.model_styling_decision.get("database_acceptance", {}), ensure_ascii=False, indent=2); return f"高级时装秀场礼服效果图。项目：{d['project_name']}。参考图识别摘要：{self.analysis_output.toPlainText()}。AI 设计方案：{d['design_plan']}。最终确认工作台参数：{json.dumps(d['parameters'], ensure_ascii=False)}。数据库设计决策包：{format_decision_package(self.design_recommendations, self.design_audit)}。数据库模特造型决策：{styling}。数据库纸样决策证据：{pattern}。数据库图片验收硬约束：{acceptance}。灵感关键词：{self.keywords.toPlainText()}。补充要求：{self.image_extra.toPlainText()}。必须是中国成年女性真人时装摄影感，严格遵守数据库选择的发型、头饰、表情、视线、姿态与动态；必须让数据库验收条件在画面中清晰可见，不得用与数据库指定姿态不一致的正面静态站姿替代；面部自然有轻微不对称，真实皮肤纹理和毛孔，真实眼神、手部和身体比例，妆容克制并与礼服风格协调；避免塑料皮肤、蜡像脸、过度磨皮、诡异眼神、僵硬表情、重复脸、AI伪影。请生成全身专业时装视觉，完整表现礼服结构、比例、面料层次、工艺细节、秀场灯光和全身造型；遵守审查风险并避免不安全结构；不要文字、不要水印、不要品牌标识。"
+        if not self.final_design_locked or not self.final_design_spec:
+            return "未锁定 final_design_spec，禁止调用图片 API。"
+        d = self.collect_data(); spec = json.dumps(self.final_design_spec, ensure_ascii=False, indent=2); return f"只执行以下已锁定的 final_design_spec，不重新设计、不覆盖其中参数：\n{spec}\n摄影补充要求：{self.image_extra.toPlainText()}。必须是中国成年女性真人时装摄影感；严格遵守 final_design_spec 中的廓形、领型、袖型、面料、颜色、拖尾、纸样证据、发型、头饰、表情、视线、姿态与动态；必须让 database_acceptance 条件在画面中清晰可见；不要文字、不要水印、不要品牌标识；避免塑料皮肤、蜡像脸、过度磨皮、诡异眼神、僵硬表情、重复脸和 AI 伪影。"
 
     def generate_image(self):
         self.refresh_knowledge_context()
         self.refresh_parameter_json()
         if not self.plan_output.toPlainText().strip(): QMessageBox.warning(self, "尚未完成第二步", "请先生成或填写 AI 设计方案。"); self.tabs.setCurrentIndex(1); return
+        if not self.final_design_locked or not self.final_design_spec:
+            QMessageBox.warning(self, "最终设计未锁定", "请先在 03 点击“锁定最终设计”，再进入图片执行。"); self.tabs.setCurrentIndex(2); return
         if not self.pattern_matches:
             QMessageBox.warning(self, "纸样证据未命中", "当前设计没有命中数据库纸样证据，不能进入图片生成。请补充廓形、面料、分割线或纸样关键词后重新检索。")
             self.tabs.setCurrentIndex(1); return
         if not self.config.get("api_key"): QMessageBox.warning(self, "缺少 API Key", "请先在接口设置中填写 API Key。"); self.tabs.setCurrentIndex(4); return
-        self._last_image_prompt = self.image_prompt(); payload = {"prompt": self._last_image_prompt, "references": self.references, "size": self.image_size.currentText(), "quality": self.image_quality.currentText()}; self.generate_btn.setEnabled(False); self.generate_btn.setText("API 生成中，最长等待 180 秒……"); self.save_image_btn.setEnabled(False); self.save_settings_silent(); self.append_log(f"准备图片请求：模型={self.config.get('image_model')}，参考图数量={len(self.references)}"); self.worker = ApiWorker(self.config, "image", payload); self.worker.log.connect(self.append_log); self.worker.done.connect(self.image_done); self.worker.start()
+        self._last_image_prompt = self.image_prompt(); payload = {"prompt": self._last_image_prompt, "references": self.references, "size": self.image_size.currentText(), "quality": self.image_quality.currentText()}; self.generate_btn.setEnabled(False); self.generate_btn.setText(f"API 生成中，最长等待 {self.config.get('image_timeout_seconds', 360)} 秒……"); self.save_image_btn.setEnabled(False); self.save_settings_silent(); self.append_log(f"准备图片请求：模型={self.config.get('image_model')}，参考图数量={len(self.references)}"); self.worker = ApiWorker(self.config, "image", payload); self.worker.log.connect(self.append_log); self.worker.done.connect(self.image_done); self.worker.start()
 
     def image_done(self, result, error, ok):
         self.generate_btn.setEnabled(True); self.generate_btn.setText("调用 gpt-image-2.5 生成效果图")
         if not ok: QMessageBox.critical(self, "图片生成失败", error); return
-        self.generated_bytes = result; pix = QPixmap(); pix.loadFromData(result); self.generated_label.setPixmap(pix.scaled(self.generated_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)); self.save_image_btn.setEnabled(True); self.status.setText("第四步已完成：API 效果图已返回"); self.update_steps()
+        self.generated_bytes = result; self.image_review_status = "待验收"; self.set_workflow_state("image", "待视觉验收"); pix = QPixmap(); pix.loadFromData(result); self.generated_label.setPixmap(pix.scaled(self.generated_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)); self.save_image_btn.setEnabled(True); self.status.setText("第四步已完成：API 效果图已返回，等待验收"); self.update_steps()
 
     def save_generated_image(self):
         if not self.generated_bytes: return
+        if self.image_review_status != "已验收":
+            QMessageBox.warning(self, "尚未验收", "请先点击“图片验收通过”，再保存为最终结果。"); return
         path, _ = QFileDialog.getSaveFileName(self, "保存 API 原图", "gown_api_generated.png", "PNG (*.png);;JPEG (*.jpg);;WEBP (*.webp)")
-        if path: Path(path).write_bytes(self.generated_bytes); self.db.record_generation(self.current_project_id, self.config.get("image_model", "gpt-image-2.5"), self._last_image_prompt or self.image_prompt(), path, {"recommendations": self.design_recommendations, "audit": self.design_audit}, [row["id"] for row in self.knowledge_matches] + [row["knowledge_id"] for row in self.pattern_matches]); self.status.setText(f"已保存 API 原图 · {Path(path).name}")
+        if path: Path(path).write_bytes(self.generated_bytes); self.db.record_generation(self.current_project_id, self.config.get("image_model", "gpt-image-2.5"), self._last_image_prompt or self.image_prompt(), path, {"final_design_spec": self.final_design_spec, "recommendations": self.design_recommendations, "audit": self.design_audit}, [row["id"] for row in self.knowledge_matches] + [row["knowledge_id"] for row in self.pattern_matches]); self.status.setText(f"已保存 API 原图 · {Path(path).name}")
 
     def test_text_api(self):
         self.start_chat([{"role": "user", "content": "只回复：文字 API 连接正常"}], lambda result, error, ok: (QMessageBox.information(self, "测试结果", result if ok else error)))
 
     def save_project(self):
-        self.refresh_parameter_json(); project_id = self.db.save(self.collect_data(), self.references, self.knowledge_matches, self.design_recommendations, self.design_audit, self.pattern_matches); self.current_project_id = project_id; self.status.setText(f"已保存到 SQLite · 项目 {project_id} · 礼服证据 {len(self.knowledge_matches)} 条 · 纸样证据 {len(self.pattern_matches)} 条 · 风险 {self.design_audit.get('risk_count', 0)} 项"); QMessageBox.information(self, "已保存", f"项目已保存到本地数据库：{DB_PATH.name}\n项目编号：{project_id}\n礼服证据：{len(self.knowledge_matches)} 条\n纸样证据：{len(self.pattern_matches)} 条\n审查风险：{self.design_audit.get('risk_count', 0)} 项")
+        self.refresh_parameter_json(); decision_record = dict(self.design_recommendations); decision_record["final_design_spec"] = self.final_design_spec; project_id = self.db.save(self.collect_data(), self.references, self.knowledge_matches, decision_record, self.design_audit, self.pattern_matches); self.current_project_id = project_id; self.status.setText(f"已保存到 SQLite · 项目 {project_id} · 礼服证据 {len(self.knowledge_matches)} 条 · 纸样证据 {len(self.pattern_matches)} 条 · 风险 {self.design_audit.get('risk_count', 0)} 项"); QMessageBox.information(self, "已保存", f"项目已保存到本地数据库：{DB_PATH.name}\n项目编号：{project_id}\n礼服证据：{len(self.knowledge_matches)} 条\n纸样证据：{len(self.pattern_matches)} 条\n审查风险：{self.design_audit.get('risk_count', 0)} 项")
 
     def export_brief(self):
         path, _ = QFileDialog.getSaveFileName(self, "导出设计单", "show_gown_design_brief.html", "HTML (*.html);;Markdown (*.md)")

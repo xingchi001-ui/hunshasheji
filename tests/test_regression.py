@@ -41,12 +41,11 @@ assert '"silhouette": "鱼尾"' in win.parameter_json.toPlainText()
 assert win.parameters()["measurements"]["waist_cm"] == 64.0
 win.analysis_output.setPlainText('{"主题":"午夜花园"}')
 win.plan_output.setPlainText("鱼尾礼服设计方案：黑金缎面与珠绣。")
-assert "午夜花园" in win.image_prompt()
-assert "鱼尾" in win.image_prompt()
-assert "中国成年女性真人时装摄影感" in win.image_prompt()
-assert "真实皮肤纹理和毛孔" in win.image_prompt()
-assert "AI伪影" in win.image_prompt()
 win.brief_input.setPlainText("鱼尾 蕾丝 立体裁剪")
+win.extract_inspiration()
+assert win.workflow_status["inspiration"] == "待确认"
+win.confirm_inspiration()
+assert win.workflow_status["inspiration"] == "已确认"
 context = win.refresh_knowledge_context()
 assert win.knowledge_matches
 assert win.model_styling_decision["status"] == "selected_from_database"
@@ -62,10 +61,23 @@ assert "数据库纸样决策证据" in context
 assert win.design_recommendations["pattern_decision"]["decision_source"] == "SQLite pattern_knowledge"
 assert len(win.pattern_matches) > 0
 assert win.config["image_timeout_seconds"] == 360
-assert "数据库图片验收硬约束" in win.image_prompt()
-assert "不得用与数据库指定姿态不一致的正面静态站姿替代" in win.image_prompt()
 assert win.design_recommendations["evidence_count"] > 0
 assert win.design_audit["evidence_count"] == len(win.knowledge_matches)
+win.accept_database_decision()
+assert win.database_decision_confirmed is True
+win.lock_final_design()
+assert win.final_design_locked is True
+assert Path("final_design_spec.json").exists()
+assert json.loads(Path("final_design_spec.json").read_text(encoding="utf-8"))["parameters"]["silhouette"] == "鱼尾"
+assert "午夜花园" in win.image_prompt()
+assert "鱼尾" in win.image_prompt()
+assert "final_design_spec" in win.image_prompt()
+assert "database_acceptance" in win.image_prompt()
+assert "中国成年女性真人时装摄影感" in win.image_prompt()
+assert "AI 伪影" in win.image_prompt()
+win.unlock_final_design()
+assert win.final_design_locked is False
+win.lock_final_design()
 audit = audit_design({"silhouette": "鱼尾", "train": "超长拖尾", "craft": "珠绣", "fabric": "透明欧根纱", "measurements": {}}, win.design_recommendations)
 assert audit["risk_count"] >= 3
 assert "preflight_audit" in format_decision_package(win.design_recommendations, audit)
@@ -87,7 +99,7 @@ for token in ["/chat/completions", "/images/generations", "/images/edits", "imag
 assert '"n": 1' in source
 assert '"response_format": "b64_json"' not in source
 assert "model_styling_decision" in source and "search_model_styling" in source
-assert "严格遵守数据库选择的发型、头饰、表情、视线、姿态与动态" in source
+assert "final_design_spec" in source and "锁定最终设计" in source and "图片验收通过" in source
 assert 'self.start_chat([{"role": "user", "content": parts}], self.analysis_done, self.config.get("vision_model")' in source
 assert 'max_completion_tokens": 8000' in source
 assert 'finish_reason=' in source and '推理字段长度=' in source
