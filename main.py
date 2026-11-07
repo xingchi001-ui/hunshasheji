@@ -11,7 +11,7 @@ from pathlib import Path
 import requests
 from dress_knowledge import FACETS, ensure_schema, import_segments, rebuild_model_styling_knowledge, rebuild_pattern_knowledge, search_segments, search_model_styling, search_pattern_knowledge, format_context, recommend_design, audit_design, format_decision_package
 from PySide6.QtCore import QThread, Signal, Qt
-from PySide6.QtGui import QDesktopServices, QPixmap
+from PySide6.QtGui import QDesktopServices, QIcon, QPixmap
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox,
@@ -364,6 +364,7 @@ class PatternPackWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setWindowIcon(QIcon(str(RESOURCE_ROOT / "assets" / "show_gown_studio.ico")))
         self.config = load_config()
         self.db = ProjectDB()
         self.ensure_dress_training_data()
@@ -788,7 +789,7 @@ class MainWindow(QMainWindow):
 
 
 def main():
-    app = QApplication(sys.argv); app.setApplicationName(APP_NAME); window = MainWindow(); window.show(); sys.exit(app.exec())
+    app = QApplication(sys.argv); app.setApplicationName(APP_NAME); app.setApplicationDisplayName(APP_NAME); app.setWindowIcon(QIcon(str(RESOURCE_ROOT / "assets" / "show_gown_studio.ico"))); window = MainWindow(); window.show(); sys.exit(app.exec())
 
 
 if __name__ == "__main__":

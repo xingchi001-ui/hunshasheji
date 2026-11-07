@@ -92,6 +92,8 @@ python tests/test_regression.py
 
 打包修复：PyInstaller 现在将整个 `assets` 目录嵌入单文件程序，冻结运行时从 `_MEIPASS` 读取 Logo，不再依赖 EXE 外部目录；`build.bat` 同时使用 `assets\show_gown_studio.ico` 作为 Windows EXE 图标，并验证了单文件内部包含 3 个 PNG Logo 和 ICO 图标。
 
+任务栏图标修复：除了设置 PyInstaller 的 EXE 图标，程序现在在 QApplication 和主窗口创建时都显式设置 `show_gown_studio.ico`，确保 Windows 任务栏、窗口标题栏和 Alt+Tab 使用品牌图标，而不是 Qt/Python 默认图标。
+
 02 设计目标已接入真实决策链：例如输入“适合走秀开场”后，程序会识别为“走秀开场”，向本地数据库检索“秀场、走台、行走、动态、轮廓、灯光”等相关证据，并生成“首轮入场识别度、行走/走步、一脚前迈、裙摆不妨碍行走、远距离强轮廓”等目标驱动约束；这些约束会写入数据库决策包，并以硬性要求传给 AI 设计方案，末尾还要求输出目标验收清单。闭幕/压轴目标会切换为转身、回眸、拖尾展开等另一组约束。
 
 On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, bundles the SQLite database and local visual-data folder, and generates:

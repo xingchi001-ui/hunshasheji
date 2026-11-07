@@ -34,6 +34,7 @@ assert win.tabs.count() == 5
 assert win.tabs.currentIndex() == 4
 assert Path("assets/logo_show_gown_needle.png").exists()
 assert win.logo_label.pixmap() is not None and not win.logo_label.pixmap().isNull()
+assert not win.windowIcon().isNull()
 assert win.vision_model.currentText() == "MiniMax-M3"
 assert win.text_model.currentText() == "deepseek-v4.1-flash"
 assert win.image_model.currentText() == "gpt-image-2.5"
@@ -119,7 +120,7 @@ assert 'finish_reason=' in source and '推理字段长度=' in source
 assert "reasoning_effort" in source and "model_key" in source
 for token in ["recommend_design", "audit_design", "project_decision_audits", "generation_audits", "evidence_ids", "PatternPackWorker", "pattern_reference_spec.json", "professional_pose_terms", "00_overview_contact_sheet.png", "show_pattern_overview", "open_pattern_directory", "choose_pattern_output_dir", "pattern_pack_output_dir", "每张图成功后立即写入本地", "查看打版参考包总览", "path.write_bytes(data)"]:
     assert token in source or token in (Path(__file__).resolve().parents[1] / "dress_knowledge.py").read_text(encoding="utf-8")
-for token in ["logo_show_gown_needle.png", "RESOURCE_ROOT / \"assets\"", "DATABASE-LED COUTURE WORKBENCH", "QLabel#subtitle", "QTabBar::tab:selected"]:
+for token in ["logo_show_gown_needle.png", "show_gown_studio.ico", "setWindowIcon", "setApplicationDisplayName", "RESOURCE_ROOT / \"assets\"", "DATABASE-LED COUTURE WORKBENCH", "QLabel#subtitle", "QTabBar::tab:selected"]:
     assert token in source
 for token in ["goal_constraints", "走秀开场", "专业走步动作", "设计目标（会直接改变数据库检索和 AI 方案）", "目标验收清单"]:
     assert token in source
