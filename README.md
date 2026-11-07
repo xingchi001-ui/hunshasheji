@@ -100,6 +100,8 @@ python tests/test_regression.py
 
 03 页面新增“纸样基准（锁定后同时驱动生图和出纸样）”：标准身高、标准胸腰臀比例、标准肩背比例、穿着放量、基础面料类型、走秀动态活动量、鞋跟高度和拖尾/裙摆规则。锁定后这些字段进入 `final_design_spec.json` 的 `parameters.pattern_baseline`，同时写入 `pattern_reference_spec.json`；04 图片提示词和打版参考包读取同一份锁定规格，禁止各自重新猜测。
 
+图片执行投影会保留上述全部纸样基准和数据库硬约束，但会压缩数据库长文本后再发送到图片 API，避免完整证据档案超过图片路由的请求限制；完整证据仍保存在本地 `final_design_spec.json` 和审计文件中。锁定顺序已修正，最终规格中的纸样基准状态为 `locked_with_final_design_spec`。
+
 On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, bundles the SQLite database and local visual-data folder, and generates:
 
 ```text
