@@ -88,6 +88,8 @@ python tests/test_regression.py
 
 04 的“打版包输出文件夹”支持自定义路径。图片 API 每成功返回一张，程序立即写入该文件夹对应的 `01_*.png` 至 `14_*.png`，随后才继续下一张；因此中途断电、断网或服务端失败时，已经完成的图片不会丢失，重新生成会自动跳过已有文件。总览图和 `pattern_reference_manifest.json` 在本批次结束后写入同一文件夹。
 
+界面升级：程序启动默认进入“接口设置”页，方便先配置 Base URL、API Key 和模型；顶部加入“针线礼服”品牌 Logo 与英文副标识，采用深梅紫、香槟金和暖米白的专业时装工作室配色，并统一卡片、按钮、输入框、标签页和滚动条的视觉层级。Logo 候选保存在 `assets/`，主 Logo 为 `logo_show_gown_needle.png`。
+
 On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, bundles the SQLite database and local visual-data folder, and generates:
 
 ```text

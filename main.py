@@ -28,6 +28,7 @@ DB_PATH = ROOT / "show_gown_studio.db"
 FINAL_SPEC_PATH = ROOT / "final_design_spec.json"
 PATTERN_PACK_DIR = ROOT / "pattern_reference_pack"
 PATTERN_SPEC_PATH = ROOT / "pattern_reference_spec.json"
+LOGO_PATH = ROOT / "assets" / "logo_show_gown_needle.png"
 MODEL_DIMENSIONS = ("hairstyle", "hair_accessory", "expression", "pose", "gaze", "movement", "compatibility")
 POSE_TERMS = ("站立", "行走/走步", "转身", "坐姿", "侧身", "回眸", "屈膝", "抬臂", "旋转", "摆动", "展开", "上下台阶")
 PATTERN_VIEWS = (
@@ -390,6 +391,7 @@ class MainWindow(QMainWindow):
         self.resize(1450, 920)
         self.setStyleSheet(self.styles())
         self.build_ui()
+        self.tabs.setCurrentIndex(4)
         self.update_steps()
 
     def ensure_dress_training_data(self):
@@ -410,25 +412,33 @@ class MainWindow(QMainWindow):
 
     def styles(self):
         return """
-        QWidget { font-family: 'Microsoft YaHei'; font-size: 13px; color: #28252a; }
-        QMainWindow, QTabWidget::pane { background: #f7f4ef; }
-        QGroupBox { background: #fffdf9; border: 1px solid #ddd4c8; border-radius: 10px; margin-top: 12px; padding: 14px; font-weight: bold; }
-        QGroupBox::title { subcontrol-origin: margin; left: 14px; padding: 0 6px; color: #6d4e4a; }
-        QLineEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox { background: white; border: 1px solid #d5cbc0; border-radius: 6px; padding: 7px; }
-        QPushButton { background: #6d4e4a; color: white; border: 0; border-radius: 6px; padding: 9px 14px; }
-        QPushButton:hover { background: #8b625b; }
-        QPushButton[secondary="true"] { background: #e7ded4; color: #4d403e; }
-        QTabBar::tab { background: #e9e1d8; padding: 11px 20px; margin-right: 3px; border-radius: 6px; }
-        QTabBar::tab:selected { background: #6d4e4a; color: white; }
-        QListWidget { background: #fffdf9; border: 1px solid #ddd4c8; border-radius: 8px; }
-        QLabel#title { font-size: 22px; font-weight: bold; color: #4e3535; }
-        QLabel#muted { color: #81766d; }
-        QLabel#step { font-size: 12px; color: #6d4e4a; padding: 7px; }
+        QWidget { font-family: 'Microsoft YaHei'; font-size: 13px; color: #2f2930; }
+        QMainWindow, QTabWidget::pane { background: #f3eee8; }
+        QGroupBox { background: #fffdfa; border: 1px solid #ded3c7; border-radius: 12px; margin-top: 14px; padding: 16px; font-weight: bold; }
+        QGroupBox::title { subcontrol-origin: margin; left: 16px; padding: 0 8px; color: #5f3d50; }
+        QLineEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox { background: #fffefd; border: 1px solid #d6c9c0; border-radius: 8px; padding: 8px 10px; selection-background-color: #9d7186; }
+        QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #9d7186; }
+        QPushButton { background: #623f54; color: white; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 600; }
+        QPushButton:hover { background: #81546f; }
+        QPushButton:pressed { background: #4d3042; }
+        QPushButton:disabled { background: #cfc5c0; color: #8c817c; }
+        QPushButton[secondary="true"] { background: #e5d9d1; color: #573e4d; }
+        QPushButton[secondary="true"]:hover { background: #d9c9c0; }
+        QTabWidget::pane { border: 0; padding: 8px; }
+        QTabBar::tab { background: #e7ddd7; color: #6b5a61; padding: 12px 22px; margin-right: 4px; border-radius: 8px; font-weight: 600; }
+        QTabBar::tab:selected { background: #623f54; color: white; }
+        QListWidget { background: #fffdfa; border: 1px solid #ded3c7; border-radius: 10px; padding: 4px; }
+        QScrollBar:vertical { background: #ebe2dc; width: 10px; margin: 2px; border-radius: 5px; }
+        QScrollBar::handle:vertical { background: #b69aa9; min-height: 30px; border-radius: 5px; }
+        QLabel#title { font-size: 24px; font-weight: 700; color: #4c3043; }
+        QLabel#subtitle { color: #91777f; font-size: 12px; }
+        QLabel#muted { color: #82757b; }
+        QLabel#step { font-size: 12px; color: #6d5262; padding: 8px 12px; background: #e8ded9; border-radius: 7px; }
         """
 
     def build_ui(self):
         root = QWidget(); self.setCentralWidget(root); outer = QVBoxLayout(root)
-        head = QHBoxLayout(); title = QLabel(APP_NAME); title.setObjectName("title"); head.addWidget(title); head.addStretch(); self.status = QLabel("全链路本地工作区"); self.status.setObjectName("muted"); head.addWidget(self.status); outer.addLayout(head)
+        head = QHBoxLayout(); self.logo_label = QLabel(); self.logo_label.setFixedSize(48, 48); self.logo_label.setAlignment(Qt.AlignCenter); logo = QPixmap(str(LOGO_PATH)); self.logo_label.setPixmap(logo.scaled(42, 42, Qt.KeepAspectRatio, Qt.SmoothTransformation) if not logo.isNull() else QPixmap()); head.addWidget(self.logo_label); brand = QVBoxLayout(); title = QLabel(APP_NAME); title.setObjectName("title"); brand.addWidget(title); subtitle = QLabel("DATABASE-LED COUTURE WORKBENCH"); subtitle.setObjectName("subtitle"); brand.addWidget(subtitle); head.addLayout(brand); head.addStretch(); self.status = QLabel("全链路本地工作区"); self.status.setObjectName("muted"); head.addWidget(self.status); outer.addLayout(head)
         steps = QHBoxLayout()
         self.step_labels = []
         for text in ["01 灵感采集", "02 数据库决策", "03 设计定案", "04 图片执行"]:
