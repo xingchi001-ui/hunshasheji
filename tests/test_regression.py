@@ -121,6 +121,8 @@ for token in ["recommend_design", "audit_design", "project_decision_audits", "ge
     assert token in source or token in (Path(__file__).resolve().parents[1] / "dress_knowledge.py").read_text(encoding="utf-8")
 for token in ["logo_show_gown_needle.png", "RESOURCE_ROOT / \"assets\"", "DATABASE-LED COUTURE WORKBENCH", "QLabel#subtitle", "QTabBar::tab:selected"]:
     assert token in source
+for token in ["goal_constraints", "走秀开场", "专业走步动作", "设计目标（会直接改变数据库检索和 AI 方案）", "目标验收清单"]:
+    assert token in source
 bundled_db = Path(__file__).resolve().parents[1] / "show_gown_studio.db"
 assert bundled_db.exists()
 import sqlite3

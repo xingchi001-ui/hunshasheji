@@ -460,7 +460,7 @@ class MainWindow(QMainWindow):
         right = QVBoxLayout(); intro = QLabel("第一步：上传参考图后，让多模态模型识别色彩、廓形、面料、工艺、氛围、构图和设计平台维度。程序只读取原始字节并通过 API 发送，不做本地图像识别或静态图像处理。") ; intro.setWordWrap(True); intro.setObjectName("muted"); right.addWidget(intro); self.analyze_btn = QPushButton("调用多模态模型识别参考图"); self.analyze_btn.clicked.connect(self.analyze_references); right.addWidget(self.analyze_btn); self.analysis_output = QTextEdit(); self.analysis_output.setPlaceholderText("多模态识别结果会以 JSON/中文摘要显示在这里，可人工修改后进入下一步。"); right.addWidget(self.analysis_output, 2); right.addWidget(QLabel("实时 API 日志（不记录 API Key）")); self.live_log = QTextEdit(); self.live_log.setReadOnly(True); self.live_log.setPlaceholderText("点击识别后，这里会显示端点、模型、HTTP 状态、响应结构和具体错误。"); self.live_log.setMaximumHeight(190); right.addWidget(self.live_log); layout.addLayout(right, 2); return tab
 
     def assistant_tab(self):
-        tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第二步：数据库先形成设计决策包，再由 AI 编排原创方案。接受数据库决策后才能进入 03。"); intro.setObjectName("muted"); layout.addWidget(intro); self.brief_input = QTextEdit(); self.brief_input.setPlaceholderText("补充设计目标，例如：希望更适合闭幕秀，强调远距离轮廓和灯光下的闪烁层次……"); layout.addWidget(self.brief_input); self.database_status = QLabel("02 状态：未开始"); self.database_status.setObjectName("muted"); layout.addWidget(self.database_status); row = QHBoxLayout(); self.knowledge_btn = QPushButton("检索并生成设计决策包"); self.knowledge_btn.clicked.connect(self.refresh_knowledge_context); row.addWidget(self.knowledge_btn); accept = QPushButton("接受数据库决策"); accept.clicked.connect(self.accept_database_decision); row.addWidget(accept); self.plan_btn = QPushButton("生成 AI 设计方案"); self.plan_btn.clicked.connect(self.generate_plan); row.addWidget(self.plan_btn); apply = QPushButton("将方案写入设计工作台"); apply.setProperty("secondary", True); apply.clicked.connect(self.apply_plan); row.addWidget(apply); row.addStretch(); layout.addLayout(row); self.knowledge_output = QTextEdit(); self.knowledge_output.setReadOnly(True); self.knowledge_output.setPlaceholderText("这里显示分层检索、结构化推荐、来源证据和风险审查。"); layout.addWidget(QLabel("数据库设计决策包：推荐、证据与审查")); layout.addWidget(self.knowledge_output, 2); self.plan_output = QTextEdit(); self.plan_output.setPlaceholderText("AI 设计助理输出：概念、廓形、面料、工艺、秀场动态、试衣检查和图片生成提示词。"); layout.addWidget(self.plan_output, 2); return tab
+        tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第二步：先填写本次设计目标，数据库会把目标转成检索词、廓形/动态约束和验收标准；再生成设计决策包，由 AI 编排方案。接受数据库决策后才能进入 03。"); intro.setObjectName("muted"); intro.setWordWrap(True); layout.addWidget(intro); layout.addWidget(QLabel("设计目标（会直接改变数据库检索和 AI 方案）")); self.brief_input = QTextEdit(); self.brief_input.setPlaceholderText("例如：适合走秀开场；或：适合闭幕压轴，强调拖尾回身和远距离记忆点……"); layout.addWidget(self.brief_input); self.database_status = QLabel("02 状态：未开始"); self.database_status.setObjectName("muted"); layout.addWidget(self.database_status); row = QHBoxLayout(); self.knowledge_btn = QPushButton("检索并生成设计决策包"); self.knowledge_btn.clicked.connect(self.refresh_knowledge_context); row.addWidget(self.knowledge_btn); accept = QPushButton("接受数据库决策"); accept.clicked.connect(self.accept_database_decision); row.addWidget(accept); self.plan_btn = QPushButton("生成 AI 设计方案"); self.plan_btn.clicked.connect(self.generate_plan); row.addWidget(self.plan_btn); apply = QPushButton("将方案写入设计工作台"); apply.setProperty("secondary", True); apply.clicked.connect(self.apply_plan); row.addWidget(apply); row.addStretch(); layout.addLayout(row); self.knowledge_output = QTextEdit(); self.knowledge_output.setReadOnly(True); self.knowledge_output.setPlaceholderText("这里显示分层检索、结构化推荐、来源证据和风险审查。"); layout.addWidget(QLabel("数据库设计决策包：推荐、证据与审查")); layout.addWidget(self.knowledge_output, 2); self.plan_output = QTextEdit(); self.plan_output.setPlaceholderText("AI 设计助理输出：概念、廓形、面料、工艺、秀场动态、试衣检查和图片生成提示词。"); layout.addWidget(self.plan_output, 2); return tab
 
     def workbench_tab(self):
         tab = QWidget(); layout = QHBoxLayout(tab); left = QVBoxLayout(); meta = QGroupBox("项目与结构化参数"); mf = QFormLayout(meta); self.project_name = QLineEdit("2026 春夏 · 午夜花园"); self.client = QLineEdit("Look 01"); self.occasion = QLineEdit("品牌发布秀 / 闭幕造型"); mf.addRow("项目名称", self.project_name); mf.addRow("造型编号", self.client); mf.addRow("使用场景", self.occasion); left.addWidget(meta)
@@ -636,20 +636,27 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "灵感方向未确认", "请先在 01 点击“提炼灵感方向”并确认。"); self.tabs.setCurrentIndex(0); return
         if not self.database_decision_confirmed:
             QMessageBox.warning(self, "数据库决策未确认", "请先检索并接受 02 数据库决策。"); return
+        goal = self.brief_input.toPlainText().strip()
+        if not goal:
+            QMessageBox.warning(self, "缺少设计目标", "请先填写 02 的设计目标，例如：适合走秀开场。"); return
         analysis = self.analysis_output.toPlainText().strip() or "尚未完成参考图识别，请基于用户关键词先给出初步方案。"
         context = self.refresh_knowledge_context()
         package = format_decision_package(self.design_recommendations, self.design_audit)
-        prompt = f"你是一名资深秀场礼服设计总监。根据参考图识别、设计师要求和下方设计决策包，生成原创且可执行的中文礼服设计方案。必须包含：设计概念、廓形比例、领袖结构、面料色彩、工艺拆解、秀场灯光与动态、量体/打版/试衣检查、给图片模型的视觉提示词。必须逐项回应风险审查；不要照抄来源原文，区分候选证据与最终判断。\n参考识别：{analysis}\n灵感关键词：{self.keywords.toPlainText()}\n补充要求：{self.brief_input.toPlainText()}\n{context}\n结构化设计决策包：\n{package}"
+        prompt = f"你是一名资深秀场礼服设计总监。根据参考图识别、设计师要求和下方设计决策包，生成原创且可执行的中文礼服设计方案。设计目标是【{goal}】；必须把该目标转化为明确的廓形、面料、工艺、模特动作、走台动态和验收标准，不能只复述目标。下面的‘目标驱动约束’优先级高于一般灵感关键词，方案必须逐项执行并在末尾列出‘目标验收清单’。必须包含：设计概念、廓形比例、领袖结构、面料色彩、工艺拆解、秀场灯光与动态、量体/打版/试衣检查、给图片模型的视觉提示词。必须逐项回应风险审查；不要照抄来源原文，区分候选证据与最终判断。\n参考识别：{analysis}\n灵感关键词：{self.keywords.toPlainText()}\n设计目标：{goal}\n目标驱动约束：{json.dumps(self.design_recommendations.get('goal_constraints', {}), ensure_ascii=False, indent=2)}\n{context}\n结构化设计决策包：\n{package}"
         self.plan_btn.setEnabled(False); self.plan_btn.setText("AI 方案生成中……"); self.start_chat([{"role": "user", "content": prompt}], self.plan_done)
 
     def refresh_knowledge_context(self):
         if self.workflow_status.get("inspiration") not in ("已确认", "已锁定"):
             self.set_workflow_state("database", "等待 01 确认")
-        query = " ".join([json.dumps(self.inspiration_card, ensure_ascii=False), self.analysis_output.toPlainText(), self.brief_input.toPlainText()])
+        goal = self.brief_input.toPlainText().strip()
+        goal_constraints = self.goal_constraints(goal)
+        query = " ".join([json.dumps(self.inspiration_card, ensure_ascii=False), self.analysis_output.toPlainText(), goal, " ".join(goal_constraints.get("database_query_terms", []))])
         self.knowledge_matches = self.db.search_dress_knowledge(query, limit=8)
         self.pattern_matches = self.db.search_pattern_knowledge(query, limit=8)
         context = format_context(self.knowledge_matches) if self.knowledge_matches else "本地礼服知识库暂无匹配记录；请基于通用服装设计原则完成方案。"
         self.design_recommendations = recommend_design(self.knowledge_matches, query)
+        self.design_recommendations["design_goal"] = goal or "未填写"
+        self.design_recommendations["goal_constraints"] = goal_constraints
         self.model_styling_decision = self.db.search_model_styling(query, self.design_recommendations, limit=8)
         self.design_recommendations["model_styling_decision"] = self.model_styling_decision
         self.design_recommendations["pattern_decision"] = {
@@ -682,6 +689,25 @@ class MainWindow(QMainWindow):
         styling_text = "\n数据库模特造型决策：\n" + json.dumps(self.model_styling_decision, ensure_ascii=False, indent=2)
         pattern_text = "\n数据库纸样决策证据：\n" + json.dumps(self.design_recommendations.get("pattern_decision", {}), ensure_ascii=False, indent=2)
         return context + styling_text + pattern_text + "\n结构化设计决策包：\n" + decision_text
+
+    def goal_constraints(self, goal: str) -> dict:
+        """Convert user-facing goals into explicit searchable and image/design acceptance constraints."""
+        text = goal or ""
+        opening = any(k in text for k in ("开场", "开幕", "第一套", "首套", "opening", "opening look"))
+        closing = any(k in text for k in ("闭幕", "压轴", "closing"))
+        constraints = {
+            "recognized_intent": "走秀开场" if opening else ("走秀闭幕" if closing else "自定义秀场目标"),
+            "database_query_terms": ["秀场", "走台", "行走", "动态", "轮廓", "灯光"],
+            "must_show": ["中国成年女性模特", "全身礼服", "清晰廓形", "专业走步动作"],
+            "acceptance_checks": ["远距离第一眼能识别礼服主轮廓", "行走时裙摆不遮挡脚步", "灯光下材质层次可辨", "正面入场画面具有开场识别度"],
+        }
+        if opening:
+            constraints.update({"priority": "首轮入场识别度", "pose": "行走/走步，一脚前迈", "movement": "从秀场入口向前走台，裙摆轻微摆动", "silhouette": "远距离强轮廓、肩腰比例明确、避免过度遮脸", "avoid": ["坐姿", "静态站立作为唯一视图", "过长拖尾导致行走受阻", "复杂背景抢主体"]})
+        elif closing:
+            constraints.update({"priority": "终场视觉记忆点", "pose": "转身/回眸后定格", "movement": "拖尾或头纱在回身时展开", "silhouette": "允许更大体积和更强拖尾", "avoid": ["过度日常化", "没有背面识别点"]})
+        else:
+            constraints.update({"priority": "按用户目标人工验收", "pose": "数据库证据选择", "movement": "与场景匹配", "silhouette": "由数据库证据和用户目标共同决定", "avoid": []})
+        return constraints
 
     def database_dimension_package(self):
         rec = self.design_recommendations or {}
