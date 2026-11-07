@@ -86,6 +86,8 @@ python tests/test_regression.py
 
 03 锁定后还会生成 `pattern_reference_spec.json`。04 新增“生成打版参考包（14视图）”，先确定一张正面母版，再让背面、左右侧面、行走、45/90 度转身、背影行走、头纱/裙摆展开，以及胸腰、侧腰臀、领口袖窿、裙摆拖尾和内外层结构近景全部引用同一张母版进行图片编辑；不再独立随机生成不同礼服。每张独立图保留原文件，同时用本地确定性拼接生成 `00_overview_contact_sheet.png`；生成失败的视图写入 `pattern_reference_manifest.json`，可以断点补生成。旧版非母版包会在新生成时自动清理。
 
+04 的“打版包输出文件夹”支持自定义路径。图片 API 每成功返回一张，程序立即写入该文件夹对应的 `01_*.png` 至 `14_*.png`，随后才继续下一张；因此中途断电、断网或服务端失败时，已经完成的图片不会丢失，重新生成会自动跳过已有文件。总览图和 `pattern_reference_manifest.json` 在本批次结束后写入同一文件夹。
+
 On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, bundles the SQLite database and local visual-data folder, and generates:
 
 ```text

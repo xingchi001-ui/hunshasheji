@@ -92,6 +92,7 @@ assert audit["risk_count"] >= 3
 assert "preflight_audit" in format_decision_package(win.design_recommendations, audit)
 assert "gpt-image-2.5" in default_config()["image_model"]
 assert default_config()["image_timeout_seconds"] == 360
+assert "pattern_pack_output_dir" in default_config()
 
 with tempfile.TemporaryDirectory() as td:
     # Original bytes are read for API transport only; no image decoding or processing.
@@ -113,7 +114,7 @@ assert 'self.start_chat([{"role": "user", "content": parts}], self.analysis_done
 assert 'max_completion_tokens": 8000' in source
 assert 'finish_reason=' in source and '推理字段长度=' in source
 assert "reasoning_effort" in source and "model_key" in source
-for token in ["recommend_design", "audit_design", "project_decision_audits", "generation_audits", "evidence_ids", "PatternPackWorker", "pattern_reference_spec.json", "professional_pose_terms", "00_overview_contact_sheet.png", "show_pattern_overview", "open_pattern_directory", "查看打版参考包总览"]:
+for token in ["recommend_design", "audit_design", "project_decision_audits", "generation_audits", "evidence_ids", "PatternPackWorker", "pattern_reference_spec.json", "professional_pose_terms", "00_overview_contact_sheet.png", "show_pattern_overview", "open_pattern_directory", "choose_pattern_output_dir", "pattern_pack_output_dir", "每张图成功后立即写入本地", "查看打版参考包总览", "path.write_bytes(data)"]:
     assert token in source or token in (Path(__file__).resolve().parents[1] / "dress_knowledge.py").read_text(encoding="utf-8")
 bundled_db = Path(__file__).resolve().parents[1] / "show_gown_studio.db"
 assert bundled_db.exists()
