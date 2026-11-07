@@ -73,6 +73,11 @@ assert win.final_design_locked is True
 assert Path("final_design_spec.json").exists()
 assert json.loads(Path("final_design_spec.json").read_text(encoding="utf-8"))["parameters"]["silhouette"] == "鱼尾"
 assert "all_database_dimensions" in json.loads(Path("final_design_spec.json").read_text(encoding="utf-8"))
+pattern_spec = Path("pattern_reference_spec.json")
+assert pattern_spec.exists()
+pattern_data = json.loads(pattern_spec.read_text(encoding="utf-8"))
+assert len(pattern_data["views"]) == 14
+assert {"01_front_static", "02_back_static", "05_walking_stride", "06_turn_45deg", "08_back_walking"} <= {v["id"] for v in pattern_data["views"]}
 assert "午夜花园" in win.image_prompt()
 assert "鱼尾" in win.image_prompt()
 assert "final_design_spec" in win.image_prompt()
@@ -108,7 +113,7 @@ assert 'self.start_chat([{"role": "user", "content": parts}], self.analysis_done
 assert 'max_completion_tokens": 8000' in source
 assert 'finish_reason=' in source and '推理字段长度=' in source
 assert "reasoning_effort" in source and "model_key" in source
-for token in ["recommend_design", "audit_design", "project_decision_audits", "generation_audits", "evidence_ids"]:
+for token in ["recommend_design", "audit_design", "project_decision_audits", "generation_audits", "evidence_ids", "PatternPackWorker", "pattern_reference_spec.json", "professional_pose_terms", "00_overview_contact_sheet.png"]:
     assert token in source or token in (Path(__file__).resolve().parents[1] / "dress_knowledge.py").read_text(encoding="utf-8")
 bundled_db = Path(__file__).resolve().parents[1] / "show_gown_studio.db"
 assert bundled_db.exists()
@@ -122,7 +127,7 @@ with sqlite3.connect(bundled_db) as c:
 build_script = (Path(__file__).resolve().parents[1] / "build.bat").read_text(encoding="utf-8")
 assert "--onefile" in build_script and "--add-data \"show_gown_studio.db;.\"" in build_script and "--add-data \"data;data\"" in build_script
 assert all(ord(c) < 128 for c in build_script)
-assert "PIL" not in source and "cv2" not in source and "Image.open" not in source
+assert "cv2" not in source and "PatternPackWorker" in source and "Image.open" in source
 bat = (Path(__file__).resolve().parents[1] / "build.bat").read_text(encoding="utf-8")
 assert all(ord(c) < 128 for c in bat)
 print("FULLCHAIN_REGRESSION_OK")

@@ -25,8 +25,26 @@ RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", ROOT))
 CONFIG_PATH = ROOT / "config.json"
 DB_PATH = ROOT / "show_gown_studio.db"
 FINAL_SPEC_PATH = ROOT / "final_design_spec.json"
+PATTERN_PACK_DIR = ROOT / "pattern_reference_pack"
+PATTERN_SPEC_PATH = ROOT / "pattern_reference_spec.json"
 MODEL_DIMENSIONS = ("hairstyle", "hair_accessory", "expression", "pose", "gaze", "movement", "compatibility")
 POSE_TERMS = ("站立", "行走/走步", "转身", "坐姿", "侧身", "回眸", "屈膝", "抬臂", "旋转", "摆动", "展开", "上下台阶")
+PATTERN_VIEWS = (
+    {"id": "01_front_static", "label": "正面静态全身", "purpose": "前片、领口、胸腰比例和前中结构", "required": True, "motion": "正面静止站立，双脚自然分开，完整露出下摆"},
+    {"id": "02_back_static", "label": "背面静态全身", "purpose": "后片、后中、后领、开口和拖尾", "required": True, "motion": "背面静止站立，完整露出后摆和拖尾"},
+    {"id": "03_left_side_static", "label": "左侧面静态", "purpose": "左侧缝、胸腰臀曲线和侧身放量", "required": True, "motion": "左侧面静止站立"},
+    {"id": "04_right_side_static", "label": "右侧面静态", "purpose": "右侧缝和左右结构核对", "required": True, "motion": "右侧面静止站立"},
+    {"id": "05_walking_stride", "label": "行走/迈步", "purpose": "行动余量、膝下放量和裙摆干涉", "required": True, "motion": "专业走步动作，一脚前迈，裙摆自然分开"},
+    {"id": "06_turn_45deg", "label": "45度转身", "purpose": "腰臀转折、侧缝和拖尾跟随", "required": True, "motion": "45度转身，身体旋转，裙摆产生轻微摆动"},
+    {"id": "07_turn_90deg", "label": "90度转身/回身", "purpose": "后片、后中和拖尾扫摆", "required": True, "motion": "90度回身，头部回眸，拖尾向外展开"},
+    {"id": "08_back_walking", "label": "背影行走", "purpose": "后片和拖尾实际动态", "required": True, "motion": "背影走步，后摆和拖尾连续落地"},
+    {"id": "09_veil_skirt_spread", "label": "头纱/裙摆展开", "purpose": "外层、衬层、拖尾连接和动态放量", "required": True, "motion": "头纱和裙摆向后侧摆动展开"},
+    {"id": "10_bodice_waist_detail", "label": "胸腰结构近景", "purpose": "胸腰收量、分割线、蕾丝层和衬底层", "required": True, "motion": "正面胸腰局部近景，保持服装结构不变"},
+    {"id": "11_side_hip_detail", "label": "侧腰至臀部近景", "purpose": "侧缝、省道、腰臀贴合和放量起点", "required": True, "motion": "侧腰至臀部局部近景"},
+    {"id": "12_neckline_armhole_detail", "label": "领口/袖窿近景", "purpose": "领口弧度、肩部承托和袖窿边缘", "required": True, "motion": "领口和袖窿局部近景"},
+    {"id": "13_skirt_train_spread", "label": "裙摆/拖尾展开", "purpose": "裙身分片、下摆宽度、拖尾长度和层级", "required": True, "motion": "裙摆和拖尾平铺式展开，结构清晰"},
+    {"id": "14_layer_structure_detail", "label": "内外层结构近景", "purpose": "外层、透明层、衬层、里布和支撑关系", "required": True, "motion": "局部结构展示，不虚构不可见缝份和尺寸"},
+)
 TRAINING_DATA_PATH = Path(os.getenv("DRESS_TRAINING_DATA", ROOT / "data" / "dress_training" / "segments_all.jsonl"))
 
 
@@ -280,6 +298,64 @@ class ApiWorker(QThread):
         raise RuntimeError("未知 API 操作")
 
 
+class PatternPackWorker(QThread):
+    progress = Signal(int, str)
+    log = Signal(str)
+    done = Signal(object)
+
+    def __init__(self, config, final_spec, output_dir):
+        super().__init__()
+        self.config, self.final_spec, self.output_dir = config, final_spec, Path(output_dir)
+
+    def compact_spec(self):
+        spec = self.final_spec
+        dims = spec.get("all_database_dimensions", {})
+        styling = dims.get("model_styling_dimensions", spec.get("model_styling", {}))
+        return {"parameters": spec.get("parameters", {}), "dress_dimensions": dims.get("dress_dimensions", {}), "pattern_dimensions": dims.get("pattern_dimensions", {}), "model_styling": styling, "source_pages": dims.get("source_pages", [])[:8], "evidence_ids": dims.get("evidence_ids", [])[:8]}
+
+    def view_prompt(self, view):
+        shared = json.dumps(self.compact_spec(), ensure_ascii=False, indent=2)
+        return f"服装打版视觉参考图，不是纸样线稿，不添加文字和尺寸标注。只执行以下已锁定礼服规格，不改变廓形、面料、颜色、工艺、层级、模特、发型和姿态：\n{shared}\n当前视图：{view['label']}。打版用途：{view['purpose']}。动作/构图要求：{view['motion']}。同一中国成年女性真人模特、同一套礼服、同一灯光基准，完整表现结构线、面料层级和下摆；不可见的缝份、精确尺寸、省量、布纹和内部支撑不得臆造；真实时装摄影，避免 AI 伪影、文字、水印和品牌标识。"
+
+    def create_contact_sheet(self, paths):
+        try:
+            from PIL import Image, ImageOps, ImageDraw
+            images = []
+            for path in paths:
+                image = Image.open(path).convert("RGB")
+                image.thumbnail((420, 420))
+                canvas = Image.new("RGB", (440, 480), "white")
+                canvas.paste(image, ((440 - image.width) // 2, 20))
+                ImageDraw.Draw(canvas).text((15, 450), Path(path).stem, fill="black")
+                images.append(canvas)
+            cols = 3; rows = (len(images) + cols - 1) // cols
+            sheet = Image.new("RGB", (cols * 440, rows * 480), "#e9e4de")
+            for index, image in enumerate(images): sheet.paste(image, ((index % cols) * 440, (index // cols) * 480))
+            output = self.output_dir / "00_overview_contact_sheet.png"; sheet.save(output); return str(output)
+        except Exception as exc:
+            self.log.emit(f"拼接总览图失败：{exc}"); return ""
+
+    def run(self):
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        created, failed = [], []
+        total = len(PATTERN_VIEWS)
+        for index, view in enumerate(PATTERN_VIEWS, start=1):
+            self.progress.emit(index - 1, f"正在生成 {view['id']} · {view['label']}")
+            try:
+                path = self.output_dir / f"{view['id']}.png"
+                if path.exists() and path.stat().st_size > 0:
+                    created.append(str(path)); self.log.emit(f"跳过已有文件：{view['id']}"); self.progress.emit(index, f"已跳过 {index}/{total}：{view['label']}"); continue
+                worker = ApiWorker(self.config, "image", {"prompt": self.view_prompt(view), "references": [], "size": "1024x1024", "quality": "low"})
+                data = worker.call_api(); path.write_bytes(data); created.append(str(path)); self.log.emit(f"完成：{view['id']}，字节={len(data)}")
+            except Exception as exc:
+                failed.append({"view": view["id"], "label": view["label"], "error": str(exc)}); self.log.emit(f"失败：{view['id']}：{exc}")
+            self.progress.emit(index, f"已处理 {index}/{total}：{view['label']}")
+        overview = self.create_contact_sheet(created) if created else ""
+        manifest = {"spec_version": 1, "created_at": datetime.now().isoformat(timespec="seconds"), "views": list(PATTERN_VIEWS), "created_files": created, "failed_views": failed, "overview": overview, "source_spec": str(PATTERN_SPEC_PATH)}
+        (self.output_dir / "pattern_reference_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.done.emit(manifest)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -297,6 +373,8 @@ class MainWindow(QMainWindow):
         self.final_design_spec = {}
         self.final_design_locked = False
         self.image_review_status = "未验收"
+        self.pattern_pack_worker = None
+        self.pattern_pack_manifest = {}
         self.current_project_id = None
         self.references = []
         self.analysis = {}
@@ -379,7 +457,7 @@ class MainWindow(QMainWindow):
         right = QVBoxLayout(); info = QLabel("第三步：AI 方案落地为可修改的最终设计参数。数据库全维度会在这里展示，必须锁定最终设计后，第四步才会调用图片 API。"); info.setWordWrap(True); info.setObjectName("muted"); right.addWidget(info); self.knowledge_status = QLabel("知识库链路：等待检索"); self.knowledge_status.setObjectName("muted"); right.addWidget(self.knowledge_status); self.design_status = QLabel("03 状态：未开始"); self.design_status.setObjectName("muted"); right.addWidget(self.design_status); self.parameter_json = QTextEdit(); self.parameter_json.setReadOnly(True); right.addWidget(QLabel("当前核心参数 JSON")); right.addWidget(self.parameter_json, 1); self.dimension_output = QTextEdit(); self.dimension_output.setReadOnly(True); self.dimension_output.setPlaceholderText("检索数据库后，这里显示礼服、纸样、模特和专业姿态/动态的全部维度。"); right.addWidget(QLabel("数据库全维度定案（含专业姿态术语）")); right.addWidget(self.dimension_output, 3); refresh = QPushButton("刷新结构化参数"); refresh.clicked.connect(self.refresh_parameter_json); right.addWidget(refresh); design_row = QHBoxLayout(); draft = QPushButton("保存设计草稿"); draft.clicked.connect(self.save_design_draft); design_row.addWidget(draft); lock = QPushButton("锁定最终设计"); lock.clicked.connect(self.lock_final_design); design_row.addWidget(lock); unlock = QPushButton("解锁并修改"); unlock.clicked.connect(self.unlock_final_design); design_row.addWidget(unlock); right.addLayout(design_row); layout.addLayout(right, 1); return tab
 
     def image_tab(self):
-        tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第四步：只执行 03 已锁定的 final_design_spec.json。这里可以补充摄影要求，但不能改动最终廓形、面料、颜色、纸样和模特决策。") ; intro.setWordWrap(True); intro.setObjectName("muted"); layout.addWidget(intro); self.image_status = QLabel("04 状态：未开始"); self.image_status.setObjectName("muted"); layout.addWidget(self.image_status); controls = QGroupBox("效果图设置"); cf = QFormLayout(controls); self.image_extra = QTextEdit(); self.image_extra.setPlaceholderText("只填写视角、舞台灯光、摄影风格等执行要求；不要修改廓形和面料"); self.image_size = self.combo(["1024x1024", "1024x1536", "1536x1024"]); self.image_quality = self.combo(["low", "medium", "high"]); cf.addRow("摄影补充要求", self.image_extra); cf.addRow("画幅（默认方图更快）", self.image_size); cf.addRow("质量", self.image_quality); layout.addWidget(controls); row = QHBoxLayout(); check = QPushButton("检查最终设计"); check.clicked.connect(self.check_final_design); row.addWidget(check); self.generate_btn = QPushButton("调用 gpt-image-2.5 生成效果图"); self.generate_btn.clicked.connect(self.generate_image); row.addWidget(self.generate_btn); self.save_image_btn = QPushButton("保存 API 原图"); self.save_image_btn.setProperty("secondary", True); self.save_image_btn.setEnabled(False); self.save_image_btn.clicked.connect(self.save_generated_image); row.addWidget(self.save_image_btn); row.addStretch(); layout.addLayout(row); review = QHBoxLayout(); self.pass_review_btn = QPushButton("图片验收通过"); self.pass_review_btn.clicked.connect(self.accept_image_review); review.addWidget(self.pass_review_btn); self.fail_review_btn = QPushButton("图片不通过，返回 03"); self.fail_review_btn.clicked.connect(self.reject_image_review); review.addWidget(self.fail_review_btn); layout.addLayout(review); self.generated_label = QLabel("API 返回的原图将在这里显示"); self.generated_label.setAlignment(Qt.AlignCenter); self.generated_label.setMinimumHeight(420); self.generated_label.setStyleSheet("background:#fffdf9;border:1px solid #ddd4c8;border-radius:8px;color:#81766d;"); layout.addWidget(self.generated_label, 1); return tab
+        tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第四步：只执行 03 已锁定的 final_design_spec.json。这里可以补充摄影要求，但不能改动最终廓形、面料、颜色、纸样和模特决策。") ; intro.setWordWrap(True); intro.setObjectName("muted"); layout.addWidget(intro); self.image_status = QLabel("04 状态：未开始"); self.image_status.setObjectName("muted"); layout.addWidget(self.image_status); controls = QGroupBox("效果图设置"); cf = QFormLayout(controls); self.image_extra = QTextEdit(); self.image_extra.setPlaceholderText("只填写视角、舞台灯光、摄影风格等执行要求；不要修改廓形和面料"); self.image_size = self.combo(["1024x1024", "1024x1536", "1536x1024"]); self.image_quality = self.combo(["low", "medium", "high"]); cf.addRow("摄影补充要求", self.image_extra); cf.addRow("画幅（默认方图更快）", self.image_size); cf.addRow("质量", self.image_quality); layout.addWidget(controls); row = QHBoxLayout(); check = QPushButton("检查最终设计"); check.clicked.connect(self.check_final_design); row.addWidget(check); self.generate_btn = QPushButton("调用 gpt-image-2.5 生成效果图"); self.generate_btn.clicked.connect(self.generate_image); row.addWidget(self.generate_btn); pack = QPushButton("生成打版参考包（14视图）"); pack.clicked.connect(self.generate_pattern_pack); row.addWidget(pack); self.save_image_btn = QPushButton("保存 API 原图"); self.save_image_btn.setProperty("secondary", True); self.save_image_btn.setEnabled(False); self.save_image_btn.clicked.connect(self.save_generated_image); row.addWidget(self.save_image_btn); row.addStretch(); layout.addLayout(row); self.pattern_pack_status = QLabel("打版参考包：未生成"); self.pattern_pack_status.setObjectName("muted"); layout.addWidget(self.pattern_pack_status); review = QHBoxLayout(); self.pass_review_btn = QPushButton("图片验收通过"); self.pass_review_btn.clicked.connect(self.accept_image_review); review.addWidget(self.pass_review_btn); self.fail_review_btn = QPushButton("图片不通过，返回 03"); self.fail_review_btn.clicked.connect(self.reject_image_review); review.addWidget(self.fail_review_btn); layout.addLayout(review); self.generated_label = QLabel("API 返回的原图将在这里显示"); self.generated_label.setAlignment(Qt.AlignCenter); self.generated_label.setMinimumHeight(420); self.generated_label.setStyleSheet("background:#fffdf9;border:1px solid #ddd4c8;border-radius:8px;color:#81766d;"); layout.addWidget(self.generated_label, 1); return tab
 
     def settings_tab(self):
         tab = QWidget(); layout = QVBoxLayout(tab); box = QGroupBox("API 设置"); form = QFormLayout(box); self.base_url = QLineEdit(self.config["api_base_url"]); self.api_key = QLineEdit(self.config.get("api_key", "")); self.api_key.setEchoMode(QLineEdit.Password); self.vision_model = self.model_combo(["MiniMax-M3.1", "qwen3.7-plus", "qwen3.8-max", "glm-5.3-flash"] , self.config.get("vision_model", "MiniMax-M3.1")); self.text_model = self.model_combo(["deepseek-v4.1-flash", "deepseek-v4-flash", "qwen3.7-plus", "MiniMax-M3.1-flash", "glm-5.3-flash", "kimi-k2.8"], self.config.get("text_model", "deepseek-v4.1-flash")); self.image_model = self.model_combo(["gpt-image-2.5", "gpt-image-2", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare"], self.config.get("image_model", "gpt-image-2.5")); form.addRow("Base URL", self.base_url); form.addRow("API Key", self.api_key); form.addRow("多模态模型", self.vision_model); form.addRow("文字模型", self.text_model); form.addRow("图片模型", self.image_model); layout.addWidget(box); row = QHBoxLayout(); save = QPushButton("保存 API 设置"); save.clicked.connect(self.save_settings); row.addWidget(save); test = QPushButton("测试文字 API"); test.setProperty("secondary", True); test.clicked.connect(self.test_text_api); row.addWidget(test); row.addStretch(); layout.addLayout(row); note = QLabel("API Key 只写入当前目录 config.json；参考图原始字节直接发送到 API，生成图片直接保存 API 返回内容。") ; note.setWordWrap(True); note.setObjectName("muted"); layout.addWidget(note); layout.addStretch(); return tab
@@ -430,12 +508,16 @@ class MainWindow(QMainWindow):
     def build_final_design_spec(self):
         return {"spec_version": 1, "created_at": datetime.now().isoformat(timespec="seconds"), "inspiration_card": self.inspiration_card, "design_plan": self.plan_output.toPlainText().strip(), "parameters": self.parameters(), "database_decision": self.design_recommendations, "all_database_dimensions": self.database_dimension_package(), "pattern_evidence": self.pattern_matches, "model_styling": self.model_styling_decision, "audit": self.design_audit, "references": [Path(p).name for p in self.references], "designer_overrides": {"parameters": self.parameters()}}
 
+    def build_pattern_reference_spec(self):
+        dimensions = self.final_design_spec.get("all_database_dimensions", self.database_dimension_package())
+        return {"spec_version": 1, "created_at": datetime.now().isoformat(timespec="seconds"), "source_final_design_spec": str(FINAL_SPEC_PATH), "database_dimensions": dimensions, "professional_pose_terms": dimensions.get("model_styling_dimensions", {}).get("professional_pose_terms", []), "views": list(PATTERN_VIEWS), "shared_constraints": ["同一中国成年女性模特", "同一礼服规格", "同一面料颜色工艺", "前后左右结构保持一致", "不可见尺寸、省量、缝份和内部支撑不得臆造", "每张独立原图必须保留"], "validation_checklist": ["前后视图比例", "左右结构对应", "胸腰臀围度", "分割线和省道方向", "行走活动量", "转身牵拉", "拖尾落地和绊倒风险", "外层衬层里布关系"]}
+
     def lock_final_design(self):
         if not self.database_decision_confirmed:
             QMessageBox.warning(self, "数据库决策未确认", "请先在 02 接受数据库决策。"); return
         if not self.plan_output.toPlainText().strip():
             QMessageBox.warning(self, "缺少设计方案", "请先生成或填写设计方案。"); return
-        self.refresh_parameter_json(); self.final_design_spec = self.build_final_design_spec(); FINAL_SPEC_PATH.write_text(json.dumps(self.final_design_spec, ensure_ascii=False, indent=2), encoding="utf-8"); self.final_design_locked = True; self.set_workflow_state("design", "已锁定"); self.set_workflow_state("image", "待检查"); self.append_log(f"03 最终设计已锁定：{FINAL_SPEC_PATH.name}"); self.tabs.setCurrentIndex(3)
+        self.refresh_parameter_json(); self.final_design_spec = self.build_final_design_spec(); FINAL_SPEC_PATH.write_text(json.dumps(self.final_design_spec, ensure_ascii=False, indent=2), encoding="utf-8"); PATTERN_SPEC_PATH.write_text(json.dumps(self.build_pattern_reference_spec(), ensure_ascii=False, indent=2), encoding="utf-8"); self.final_design_locked = True; self.set_workflow_state("design", "已锁定"); self.set_workflow_state("image", "待检查"); self.append_log(f"03 最终设计已锁定：{FINAL_SPEC_PATH.name}；打版规格：{PATTERN_SPEC_PATH.name}"); self.tabs.setCurrentIndex(3)
 
     def unlock_final_design(self):
         self.final_design_locked = False; self.set_workflow_state("design", "编辑中"); self.set_workflow_state("image", "需要重新确认"); self.append_log("03 已解锁，04 生成资格已撤销")
@@ -444,6 +526,16 @@ class MainWindow(QMainWindow):
         if not self.final_design_locked or not self.final_design_spec:
             QMessageBox.warning(self, "最终设计未锁定", "请返回 03 锁定最终设计后再检查。"); self.tabs.setCurrentIndex(2); return
         self.set_workflow_state("image", "可生成"); self.status.setText("最终设计规格已检查，可调用图片 API")
+
+    def generate_pattern_pack(self):
+        if not self.final_design_locked or not self.final_design_spec:
+            QMessageBox.warning(self, "最终设计未锁定", "请先在 03 锁定最终设计。"); self.tabs.setCurrentIndex(2); return
+        if not self.config.get("api_key"):
+            QMessageBox.warning(self, "缺少 API Key", "请先在接口设置中填写 API Key。"); self.tabs.setCurrentIndex(4); return
+        PATTERN_PACK_DIR.mkdir(parents=True, exist_ok=True); self.pattern_pack_status.setText("打版参考包：准备生成 14 张独立视图……"); self.set_workflow_state("image", "打版参考包生成中"); self.pattern_pack_worker = PatternPackWorker(self.config, self.final_design_spec, PATTERN_PACK_DIR); self.pattern_pack_worker.progress.connect(lambda n, text: self.pattern_pack_status.setText(f"打版参考包：{text}")); self.pattern_pack_worker.log.connect(self.append_log); self.pattern_pack_worker.done.connect(self.pattern_pack_done); self.pattern_pack_worker.start()
+
+    def pattern_pack_done(self, manifest):
+        self.pattern_pack_manifest = manifest; failed = len(manifest.get("failed_views", [])); created = len(manifest.get("created_files", [])); self.pattern_pack_status.setText(f"打版参考包：完成 {created} 张，失败 {failed} 张；总览图已生成" if manifest.get("overview") else f"打版参考包：完成 {created} 张，失败 {failed} 张"); self.set_workflow_state("image", "打版包待验收"); self.status.setText(f"打版参考包已生成：{PATTERN_PACK_DIR.name}；独立图 {created} 张")
 
     def accept_image_review(self):
         if not self.generated_bytes:
