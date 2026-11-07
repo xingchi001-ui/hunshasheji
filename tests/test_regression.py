@@ -119,7 +119,7 @@ assert 'finish_reason=' in source and '推理字段长度=' in source
 assert "reasoning_effort" in source and "model_key" in source
 for token in ["recommend_design", "audit_design", "project_decision_audits", "generation_audits", "evidence_ids", "PatternPackWorker", "pattern_reference_spec.json", "professional_pose_terms", "00_overview_contact_sheet.png", "show_pattern_overview", "open_pattern_directory", "choose_pattern_output_dir", "pattern_pack_output_dir", "每张图成功后立即写入本地", "查看打版参考包总览", "path.write_bytes(data)"]:
     assert token in source or token in (Path(__file__).resolve().parents[1] / "dress_knowledge.py").read_text(encoding="utf-8")
-for token in ["logo_show_gown_needle.png", "DATABASE-LED COUTURE WORKBENCH", "QLabel#subtitle", "QTabBar::tab:selected"]:
+for token in ["logo_show_gown_needle.png", "RESOURCE_ROOT / \"assets\"", "DATABASE-LED COUTURE WORKBENCH", "QLabel#subtitle", "QTabBar::tab:selected"]:
     assert token in source
 bundled_db = Path(__file__).resolve().parents[1] / "show_gown_studio.db"
 assert bundled_db.exists()
@@ -132,6 +132,8 @@ with sqlite3.connect(bundled_db) as c:
     assert {"seam_lines", "darts", "panels", "layers", "draping_clues", "ease_clues", "validation", "risk"} <= pattern_columns
 build_script = (Path(__file__).resolve().parents[1] / "build.bat").read_text(encoding="utf-8")
 assert "--onefile" in build_script and "--add-data \"show_gown_studio.db;.\"" in build_script and "--add-data \"data;data\"" in build_script
+assert "--add-data \"assets;assets\"" in build_script and "--icon \"assets\\show_gown_studio.ico\"" in build_script
+assert (Path(__file__).resolve().parents[1] / "assets/show_gown_studio.ico").exists()
 assert all(ord(c) < 128 for c in build_script)
 assert "cv2" not in source and "PatternPackWorker" in source and "Image.open" in source
 bat = (Path(__file__).resolve().parents[1] / "build.bat").read_text(encoding="utf-8")

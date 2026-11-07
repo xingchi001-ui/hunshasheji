@@ -90,6 +90,8 @@ python tests/test_regression.py
 
 界面升级：程序启动默认进入“接口设置”页，方便先配置 Base URL、API Key 和模型；顶部加入“针线礼服”品牌 Logo 与英文副标识，采用深梅紫、香槟金和暖米白的专业时装工作室配色，并统一卡片、按钮、输入框、标签页和滚动条的视觉层级。Logo 候选保存在 `assets/`，主 Logo 为 `logo_show_gown_needle.png`。
 
+打包修复：PyInstaller 现在将整个 `assets` 目录嵌入单文件程序，冻结运行时从 `_MEIPASS` 读取 Logo，不再依赖 EXE 外部目录；`build.bat` 同时使用 `assets\show_gown_studio.ico` 作为 Windows EXE 图标，并验证了单文件内部包含 3 个 PNG Logo 和 ICO 图标。
+
 On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, bundles the SQLite database and local visual-data folder, and generates:
 
 ```text
