@@ -38,6 +38,10 @@ assert not win.windowIcon().isNull()
 assert any(box.title() == "设计定案确认栏" for box in win.findChildren(QGroupBox))
 confirm_boxes = [box for box in win.findChildren(QGroupBox) if box.title() == "设计定案确认栏"]
 assert {"保存设计草稿", "锁定最终设计", "解锁并修改"} <= {button.text() for button in confirm_boxes[0].findChildren(QPushButton)}
+assert len(confirm_boxes) == 1
+all_button_texts = [button.text() for button in win.findChildren(QPushButton)]
+for text in ["保存设计草稿", "锁定最终设计", "解锁并修改"]:
+    assert [button.text() for button in confirm_boxes[0].findChildren(QPushButton)].count(text) == 1
 assert win.vision_model.currentText() == "MiniMax-M3"
 assert win.text_model.currentText() == "deepseek-v4.1-flash"
 assert win.image_model.currentText() == "gpt-image-2.5"
