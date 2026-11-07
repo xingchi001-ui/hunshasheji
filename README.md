@@ -96,6 +96,8 @@ python tests/test_regression.py
 
 02 设计目标已接入真实决策链：例如输入“适合走秀开场”后，程序会识别为“走秀开场”，向本地数据库检索“秀场、走台、行走、动态、轮廓、灯光”等相关证据，并生成“首轮入场识别度、行走/走步、一脚前迈、裙摆不妨碍行走、远距离强轮廓”等目标驱动约束；这些约束会写入数据库决策包，并以硬性要求传给 AI 设计方案，末尾还要求输出目标验收清单。闭幕/压轴目标会切换为转身、回眸、拖尾展开等另一组约束。
 
+03 页面将“设计定案确认栏”固定在右侧内容区顶部，始终显示“保存设计草稿”“锁定最终设计”“解锁并修改”，不会再被数据库全维度文本面板挤到窗口底部；锁定后仍按原规则开放 04 图片执行。
+
 On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, bundles the SQLite database and local visual-data folder, and generates:
 
 ```text

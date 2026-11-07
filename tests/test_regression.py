@@ -6,7 +6,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QGroupBox, QPushButton
 from main import MainWindow, ProjectDB, default_config, read_raw_image
 from dress_knowledge import recommend_design, audit_design, format_decision_package
 
@@ -35,6 +35,9 @@ assert win.tabs.currentIndex() == 4
 assert Path("assets/logo_show_gown_needle.png").exists()
 assert win.logo_label.pixmap() is not None and not win.logo_label.pixmap().isNull()
 assert not win.windowIcon().isNull()
+assert any(box.title() == "设计定案确认栏" for box in win.findChildren(QGroupBox))
+confirm_boxes = [box for box in win.findChildren(QGroupBox) if box.title() == "设计定案确认栏"]
+assert {"保存设计草稿", "锁定最终设计", "解锁并修改"} <= {button.text() for button in confirm_boxes[0].findChildren(QPushButton)}
 assert win.vision_model.currentText() == "MiniMax-M3"
 assert win.text_model.currentText() == "deepseek-v4.1-flash"
 assert win.image_model.currentText() == "gpt-image-2.5"
@@ -122,7 +125,7 @@ for token in ["recommend_design", "audit_design", "project_decision_audits", "ge
     assert token in source or token in (Path(__file__).resolve().parents[1] / "dress_knowledge.py").read_text(encoding="utf-8")
 for token in ["logo_show_gown_needle.png", "show_gown_studio.ico", "setWindowIcon", "setApplicationDisplayName", "RESOURCE_ROOT / \"assets\"", "DATABASE-LED COUTURE WORKBENCH", "QLabel#subtitle", "QTabBar::tab:selected"]:
     assert token in source
-for token in ["goal_constraints", "走秀开场", "专业走步动作", "设计目标（会直接改变数据库检索和 AI 方案）", "目标验收清单"]:
+for token in ["goal_constraints", "走秀开场", "专业走步动作", "设计目标（会直接改变数据库检索和 AI 方案）", "目标验收清单", "设计定案确认栏", "确认后才能进入 04 图片执行"]:
     assert token in source
 bundled_db = Path(__file__).resolve().parents[1] / "show_gown_studio.db"
 assert bundled_db.exists()
