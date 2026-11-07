@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
-from dress_knowledge import ensure_schema, import_segments, rebuild_model_styling_knowledge, rebuild_pattern_knowledge, search_segments, search_model_styling, search_pattern_knowledge, format_context, recommend_design, audit_design, format_decision_package
+from dress_knowledge import FACETS, ensure_schema, import_segments, rebuild_model_styling_knowledge, rebuild_pattern_knowledge, search_segments, search_model_styling, search_pattern_knowledge, format_context, recommend_design, audit_design, format_decision_package
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
@@ -25,6 +25,8 @@ RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", ROOT))
 CONFIG_PATH = ROOT / "config.json"
 DB_PATH = ROOT / "show_gown_studio.db"
 FINAL_SPEC_PATH = ROOT / "final_design_spec.json"
+MODEL_DIMENSIONS = ("hairstyle", "hair_accessory", "expression", "pose", "gaze", "movement", "compatibility")
+POSE_TERMS = ("站立", "行走/走步", "转身", "坐姿", "侧身", "回眸", "屈膝", "抬臂", "旋转", "摆动", "展开", "上下台阶")
 TRAINING_DATA_PATH = Path(os.getenv("DRESS_TRAINING_DATA", ROOT / "data" / "dress_training" / "segments_all.jsonl"))
 
 
@@ -374,7 +376,7 @@ class MainWindow(QMainWindow):
         measures = QGroupBox("量体数据"); grid = QGridLayout(measures); self.height = self.measure(175); self.bust = self.measure(84); self.waist = self.measure(64); self.hip = self.measure(90); widgets = [("身高", self.height), ("胸围", self.bust), ("腰围", self.waist), ("臀围", self.hip)];
         for i, (name, widget) in enumerate(widgets): grid.addWidget(QLabel(name), i // 2, (i % 2) * 2); grid.addWidget(widget, i // 2, (i % 2) * 2 + 1)
         left.addWidget(measures); layout.addLayout(left, 1)
-        right = QVBoxLayout(); info = QLabel("第三步：AI 方案落地为可修改的最终设计参数。必须锁定最终设计后，第四步才会调用图片 API。"); info.setWordWrap(True); info.setObjectName("muted"); right.addWidget(info); self.knowledge_status = QLabel("知识库链路：等待检索"); self.knowledge_status.setObjectName("muted"); right.addWidget(self.knowledge_status); self.design_status = QLabel("03 状态：未开始"); self.design_status.setObjectName("muted"); right.addWidget(self.design_status); self.parameter_json = QTextEdit(); self.parameter_json.setReadOnly(True); right.addWidget(QLabel("当前参数 JSON")); right.addWidget(self.parameter_json, 2); refresh = QPushButton("刷新结构化参数"); refresh.clicked.connect(self.refresh_parameter_json); right.addWidget(refresh); design_row = QHBoxLayout(); draft = QPushButton("保存设计草稿"); draft.clicked.connect(self.save_design_draft); design_row.addWidget(draft); lock = QPushButton("锁定最终设计"); lock.clicked.connect(self.lock_final_design); design_row.addWidget(lock); unlock = QPushButton("解锁并修改"); unlock.clicked.connect(self.unlock_final_design); design_row.addWidget(unlock); right.addLayout(design_row); layout.addLayout(right, 1); return tab
+        right = QVBoxLayout(); info = QLabel("第三步：AI 方案落地为可修改的最终设计参数。数据库全维度会在这里展示，必须锁定最终设计后，第四步才会调用图片 API。"); info.setWordWrap(True); info.setObjectName("muted"); right.addWidget(info); self.knowledge_status = QLabel("知识库链路：等待检索"); self.knowledge_status.setObjectName("muted"); right.addWidget(self.knowledge_status); self.design_status = QLabel("03 状态：未开始"); self.design_status.setObjectName("muted"); right.addWidget(self.design_status); self.parameter_json = QTextEdit(); self.parameter_json.setReadOnly(True); right.addWidget(QLabel("当前核心参数 JSON")); right.addWidget(self.parameter_json, 1); self.dimension_output = QTextEdit(); self.dimension_output.setReadOnly(True); self.dimension_output.setPlaceholderText("检索数据库后，这里显示礼服、纸样、模特和专业姿态/动态的全部维度。"); right.addWidget(QLabel("数据库全维度定案（含专业姿态术语）")); right.addWidget(self.dimension_output, 3); refresh = QPushButton("刷新结构化参数"); refresh.clicked.connect(self.refresh_parameter_json); right.addWidget(refresh); design_row = QHBoxLayout(); draft = QPushButton("保存设计草稿"); draft.clicked.connect(self.save_design_draft); design_row.addWidget(draft); lock = QPushButton("锁定最终设计"); lock.clicked.connect(self.lock_final_design); design_row.addWidget(lock); unlock = QPushButton("解锁并修改"); unlock.clicked.connect(self.unlock_final_design); design_row.addWidget(unlock); right.addLayout(design_row); layout.addLayout(right, 1); return tab
 
     def image_tab(self):
         tab = QWidget(); layout = QVBoxLayout(tab); intro = QLabel("第四步：只执行 03 已锁定的 final_design_spec.json。这里可以补充摄影要求，但不能改动最终廓形、面料、颜色、纸样和模特决策。") ; intro.setWordWrap(True); intro.setObjectName("muted"); layout.addWidget(intro); self.image_status = QLabel("04 状态：未开始"); self.image_status.setObjectName("muted"); layout.addWidget(self.image_status); controls = QGroupBox("效果图设置"); cf = QFormLayout(controls); self.image_extra = QTextEdit(); self.image_extra.setPlaceholderText("只填写视角、舞台灯光、摄影风格等执行要求；不要修改廓形和面料"); self.image_size = self.combo(["1024x1024", "1024x1536", "1536x1024"]); self.image_quality = self.combo(["low", "medium", "high"]); cf.addRow("摄影补充要求", self.image_extra); cf.addRow("画幅（默认方图更快）", self.image_size); cf.addRow("质量", self.image_quality); layout.addWidget(controls); row = QHBoxLayout(); check = QPushButton("检查最终设计"); check.clicked.connect(self.check_final_design); row.addWidget(check); self.generate_btn = QPushButton("调用 gpt-image-2.5 生成效果图"); self.generate_btn.clicked.connect(self.generate_image); row.addWidget(self.generate_btn); self.save_image_btn = QPushButton("保存 API 原图"); self.save_image_btn.setProperty("secondary", True); self.save_image_btn.setEnabled(False); self.save_image_btn.clicked.connect(self.save_generated_image); row.addWidget(self.save_image_btn); row.addStretch(); layout.addLayout(row); review = QHBoxLayout(); self.pass_review_btn = QPushButton("图片验收通过"); self.pass_review_btn.clicked.connect(self.accept_image_review); review.addWidget(self.pass_review_btn); self.fail_review_btn = QPushButton("图片不通过，返回 03"); self.fail_review_btn.clicked.connect(self.reject_image_review); review.addWidget(self.fail_review_btn); layout.addLayout(review); self.generated_label = QLabel("API 返回的原图将在这里显示"); self.generated_label.setAlignment(Qt.AlignCenter); self.generated_label.setMinimumHeight(420); self.generated_label.setStyleSheet("background:#fffdf9;border:1px solid #ddd4c8;border-radius:8px;color:#81766d;"); layout.addWidget(self.generated_label, 1); return tab
@@ -426,7 +428,7 @@ class MainWindow(QMainWindow):
         self.refresh_parameter_json(); self.set_workflow_state("design", "待确认"); self.append_log("03 设计参数已保存为草稿")
 
     def build_final_design_spec(self):
-        return {"spec_version": 1, "created_at": datetime.now().isoformat(timespec="seconds"), "inspiration_card": self.inspiration_card, "design_plan": self.plan_output.toPlainText().strip(), "parameters": self.parameters(), "database_decision": self.design_recommendations, "pattern_evidence": self.pattern_matches, "model_styling": self.model_styling_decision, "audit": self.design_audit, "references": [Path(p).name for p in self.references], "designer_overrides": {"parameters": self.parameters()}}
+        return {"spec_version": 1, "created_at": datetime.now().isoformat(timespec="seconds"), "inspiration_card": self.inspiration_card, "design_plan": self.plan_output.toPlainText().strip(), "parameters": self.parameters(), "database_decision": self.design_recommendations, "all_database_dimensions": self.database_dimension_package(), "pattern_evidence": self.pattern_matches, "model_styling": self.model_styling_decision, "audit": self.design_audit, "references": [Path(p).name for p in self.references], "designer_overrides": {"parameters": self.parameters()}}
 
     def lock_final_design(self):
         if not self.database_decision_confirmed:
@@ -526,18 +528,33 @@ class MainWindow(QMainWindow):
             "risk": [row["risk"] for row in self.pattern_matches if row["risk"]][:6],
             "must_review_with_patternmaker": True,
         }
+        self.design_recommendations["all_database_dimensions"] = self.database_dimension_package()
         self.design_audit = audit_design(self.parameters(), self.design_recommendations)
         decision_text = format_decision_package(self.design_recommendations, self.design_audit)
         if hasattr(self, "knowledge_output"):
             self.knowledge_output.setPlainText(decision_text + "\n\n【来源证据】\n" + context)
         if hasattr(self, "knowledge_status"):
             self.knowledge_status.setText(f"知识库链路：已命中礼服 {len(self.knowledge_matches)} 条 · 纸样 {len(self.pattern_matches)} 条 · 模特造型已接管")
+        if hasattr(self, "dimension_output"):
+            self.dimension_output.setPlainText(json.dumps(self.design_recommendations["all_database_dimensions"], ensure_ascii=False, indent=2))
         self.append_log(f"数据库决策：礼服={len(self.knowledge_matches)}，纸样={len(self.pattern_matches)}，模特造型=1")
         if hasattr(self, "database_status") and not self.database_decision_confirmed:
             self.set_workflow_state("database", "待确认")
         styling_text = "\n数据库模特造型决策：\n" + json.dumps(self.model_styling_decision, ensure_ascii=False, indent=2)
         pattern_text = "\n数据库纸样决策证据：\n" + json.dumps(self.design_recommendations.get("pattern_decision", {}), ensure_ascii=False, indent=2)
         return context + styling_text + pattern_text + "\n结构化设计决策包：\n" + decision_text
+
+    def database_dimension_package(self):
+        rec = self.design_recommendations or {}
+        dress = {facet: rec.get(facet, ["数据库记录未明确"]) for facet in FACETS}
+        styling = self.model_styling_decision or {}
+        pose_text = str(styling.get("pose", "数据库记录未明确")); movement_text = str(styling.get("movement", "数据库记录未明确"))
+        aliases = (("行走", "行走（走步）"), ("走步", "走步"), ("转身", "转身"), ("坐", "坐姿"), ("站", "站立"), ("侧身", "侧身"), ("回眸", "回眸"), ("屈膝", "屈膝"), ("抬臂", "抬臂"), ("旋转", "旋转"), ("摆动", "摆动"), ("展开", "展开"), ("上下台阶", "上下台阶"))
+        pose_terms = list(dict.fromkeys([label for needle, label in aliases if needle in pose_text or needle in movement_text]))
+        if not pose_terms: pose_terms = [pose_text if pose_text else "数据库记录未明确"]
+        model = {key: styling.get(key, "数据库记录未明确") for key in MODEL_DIMENSIONS}; model["professional_pose_terms"] = pose_terms
+        pattern = rec.get("pattern_decision", {"status": "no_database_evidence"})
+        return {"dress_dimensions": dress, "pattern_dimensions": pattern, "model_styling_dimensions": model, "source_pages": rec.get("source_pages", []), "evidence_ids": rec.get("evidence_ids", []), "decision_rule": "03 必须逐项确认；未明确字段不得由程序随机补全"}
 
     def plan_done(self, result, error, ok):
         self.plan_btn.setEnabled(True); self.plan_btn.setText("生成 AI 设计方案")

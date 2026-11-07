@@ -82,6 +82,8 @@ python tests/test_regression.py
 
 图片提示词不再直接拼接四个页面的原始内容，而是由 `final_design_spec.json` 和 04 的摄影补充要求组成。数据库证据、纸样证据、模特造型、人工覆盖项、风险审查和来源页都会写入最终规格及生成审计。
 
+03“设计定案”现在展示完整数据库维度，不再只显示廓形、面料和颜色：包括礼服类型、可见部位、廓形、领型、袖型、腰线、裙型、面料、表面细节、结构工艺、场合、色彩、量体线索、设计概念、视觉效果、动态、合体度、风险、灯光、工艺流程、兼容性、设计灵感、视觉证据、不确定性，以及分割线、省道、拼片、层级、立体裁剪、放量、面料结构关系、纸样流程、验证和纸样风险。模特区单独展示发型、头饰、表情、视线、姿态、动态和兼容性，并将可见动作整理成专业术语，例如“行走（走步）”“转身”“坐姿”“侧身”“回眸”“屈膝”“抬臂”“摆动”“展开”等；数据库没有明确的字段会显示“数据库记录未明确”，不会随机补全。
+
 On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, bundles the SQLite database and local visual-data folder, and generates:
 
 ```text

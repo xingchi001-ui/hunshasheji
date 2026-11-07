@@ -60,6 +60,9 @@ assert "数据库模特造型决策" in context
 assert "数据库纸样决策证据" in context
 assert win.design_recommendations["pattern_decision"]["decision_source"] == "SQLite pattern_knowledge"
 assert len(win.pattern_matches) > 0
+assert set(win.design_recommendations["all_database_dimensions"]["dress_dimensions"]) >= {"silhouette", "fabric", "construction", "movement", "risk", "pattern_seam_lines", "pattern_darts"}
+assert "professional_pose_terms" in win.design_recommendations["all_database_dimensions"]["model_styling_dimensions"]
+assert "数据库记录未明确" in win.dimension_output.toPlainText() or win.design_recommendations["all_database_dimensions"]["model_styling_dimensions"]["professional_pose_terms"]
 assert win.config["image_timeout_seconds"] == 360
 assert win.design_recommendations["evidence_count"] > 0
 assert win.design_audit["evidence_count"] == len(win.knowledge_matches)
@@ -69,6 +72,7 @@ win.lock_final_design()
 assert win.final_design_locked is True
 assert Path("final_design_spec.json").exists()
 assert json.loads(Path("final_design_spec.json").read_text(encoding="utf-8"))["parameters"]["silhouette"] == "鱼尾"
+assert "all_database_dimensions" in json.loads(Path("final_design_spec.json").read_text(encoding="utf-8"))
 assert "午夜花园" in win.image_prompt()
 assert "鱼尾" in win.image_prompt()
 assert "final_design_spec" in win.image_prompt()
