@@ -18,7 +18,7 @@ if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 if exist release rmdir /s /q release
 
-python -m PyInstaller --noconfirm --clean --windowed --onefile --name ShowGownStudio main.py
+python -m PyInstaller --noconfirm --clean --windowed --onefile --name ShowGownStudio --add-data "show_gown_studio.db;." --add-data "data;data" main.py
 if errorlevel 1 goto :error
 
 mkdir release\ShowGownStudio

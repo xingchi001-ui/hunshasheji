@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory() as td:
     assert (Path(td) / "test.db").exists()
     with db.connect() as c:
         names = {row[0] for row in c.execute("select name from sqlite_master where type='table'")}
-    assert {"projects", "reference_assets", "generation_runs", "dress_knowledge", "project_knowledge_links", "project_decision_audits", "generation_audits"}.issubset(names)
+    assert {"projects", "reference_assets", "generation_runs", "dress_knowledge", "pattern_knowledge", "project_knowledge_links", "project_pattern_links", "project_decision_audits", "generation_audits"}.issubset(names)
     sample_data = Path(td) / "segments.jsonl"
     sample_data.write_text(json.dumps({
         "id": "book:p0001:s0001", "book_id": "book", "page": 1,
@@ -58,6 +58,9 @@ assert "已命中" in win.knowledge_status.text()
 assert win.design_recommendations["evidence_count"] == len(win.knowledge_matches)
 assert "evidence_ids" in win.knowledge_output.toPlainText()
 assert "数据库模特造型决策" in context
+assert "数据库纸样决策证据" in context
+assert win.design_recommendations["pattern_decision"]["decision_source"] == "SQLite pattern_knowledge"
+assert len(win.pattern_matches) > 0
 assert "数据库图片验收硬约束" in win.image_prompt()
 assert "不得用与数据库指定姿态不一致的正面静态站姿替代" in win.image_prompt()
 assert win.design_recommendations["evidence_count"] > 0
@@ -98,6 +101,9 @@ with sqlite3.connect(bundled_db) as c:
     assert c.execute("select count(*) from pattern_knowledge").fetchone()[0] == 217
     pattern_columns = {r[1] for r in c.execute("pragma table_info(pattern_knowledge)")}
     assert {"seam_lines", "darts", "panels", "layers", "draping_clues", "ease_clues", "validation", "risk"} <= pattern_columns
+build_script = (Path(__file__).resolve().parents[1] / "build.bat").read_text(encoding="utf-8")
+assert "--onefile" in build_script and "--add-data \"show_gown_studio.db;.\"" in build_script and "--add-data \"data;data\"" in build_script
+assert all(ord(c) < 128 for c in build_script)
 assert "PIL" not in source and "cv2" not in source and "Image.open" not in source
 bat = (Path(__file__).resolve().parents[1] / "build.bat").read_text(encoding="utf-8")
 assert all(ord(c) < 128 for c in bat)

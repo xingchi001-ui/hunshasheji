@@ -20,9 +20,9 @@ finish_reason=stop
 
 ## 礼服设计知识库兼容接入
 
-项目现在支持将本地生成的礼服设计 `segments.jsonl` 导入 SQLite 的 `dress_knowledge` 表，并在生成设计方案前按参考图识别结果、灵感关键词和设计师要求检索候选记录。
+项目现在支持将本地生成的礼服设计 `segments.jsonl` 导入 SQLite 的 `dress_knowledge` 表，并在生成设计方案前按参考图识别结果、灵感关键词和设计师要求检索候选记录。礼服、纸样和模特造型知识共同参与决策，不是仅供查看的附件。
 
-仓库已内置当前视觉知识库：`show_gown_studio.db` 包含 1063 条逐页视觉理解记录，程序启动时默认读取该数据库。数据库不是静态附件：设计简报会先检索 `dress_knowledge`，再生成结构化推荐、来源证据和风险审查，并在保存项目/生成记录时写入关联证据与决策包。
+仓库已内置当前视觉知识库：`show_gown_studio.db` 包含 1063 条逐页视觉理解记录，程序启动时默认读取该数据库。数据库不是静态附件：设计简报会先检索礼服、纸样和模特证据，再生成结构化推荐、来源证据和风险审查，并在保存项目/生成记录时写入全部关联证据与决策包。
 
 ```bash
 python import_dress_data.py /path/to/segments.jsonl --db show_gown_studio.db --replace
@@ -56,7 +56,7 @@ data/dress_training/failed_pages.jsonl      # 尚未成功分析的页面清单
 
 图片工具链已针对当前兼容端点完成参数修复：图片请求使用整数 `n=1`，不发送该端点不接受的 `response_format`，并已用项目自身 `ApiWorker` 实测生成 PNG、保存输出路径和写入 `generation_audits`。图片工具全链路实测结果为：1063 条知识记录、8 条证据关联、1 条决策审计、1 条生成记录、1 条生成审计。
 
-模特造型决策也由数据库接管：导入 846 条视觉记录后，系统建立 `model_styling_knowledge` 表，从原始逐页证据中结构化提取发型/发束、头饰、表情、视线、姿态、动态和礼服兼容性。图片生成前按礼服检索结果和数据库轮换索引确定性选择候选，提示词严格引用所选来源页和证据 ID；若原始资料没有明确某一字段，明确写为“数据库记录未明确”，不由代码随机编造。真人摄影约束仍负责中国成年女性、真实皮肤纹理、自然面部不对称和抑制 AI 伪影，但不再决定发型或姿态。
+模特造型决策也由数据库接管：导入视觉记录后，系统建立 `model_styling_knowledge` 表，从原始逐页证据中结构化提取发型/发束、头饰、表情、视线、姿态、动态和礼服兼容性。图片生成前按礼服检索结果和数据库轮换索引确定性选择候选，提示词严格引用所选来源页和证据 ID；若原始资料没有明确某一字段，明确写为“数据库记录未明确”，不由代码随机编造。真人摄影约束仍负责中国成年女性、真实皮肤纹理、自然面部不对称和抑制 AI 伪影，但不再决定发型或姿态。
 
 图片生成前还会建立 `database_acceptance` 硬验收条件，列出必须在画面中出现的礼服、发饰、姿态和动态证据；图片提示词明确禁止用与数据库指定姿态不一致的正面静态站姿替代。回归测试要求硬验收字段、来源证据和拒绝条件全部存在后才允许进入图片 API。
 
@@ -74,13 +74,13 @@ python tests/test_regression.py
 
 ## Windows standalone EXE build
 
-On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, and generates:
+On Windows, double-click the ASCII-only `build.bat`. It creates a virtual environment, installs dependencies, runs PyInstaller, bundles the SQLite database and local visual-data folder, and generates:
 
 ```text
 release/ShowGownStudio/ShowGownStudio.exe
 ```
 
-The GUI remains Chinese. Copy `config.example.json` to `config.json` beside the EXE and fill in the API key. Then double-click the ASCII-only `start.bat` to launch the app. The config file, SQLite database, and local training data stay beside the EXE instead of the PyInstaller temporary folder.
+The GUI remains Chinese. Copy `config.example.json` to `config.json` beside the EXE and fill in the API key. Then double-click the ASCII-only `start.bat` to launch the app. The first run copies the bundled SQLite database beside the EXE so projects and audit records remain writable. The API base URL defaults to `https://api.llm-token.cn/v1`; the key is never committed to Git.
 
 Optional local training data path:
 

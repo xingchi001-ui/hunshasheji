@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
-from dress_knowledge import ensure_schema, import_segments, rebuild_model_styling_knowledge, search_segments, search_model_styling, format_context, recommend_design, audit_design, format_decision_package
+from dress_knowledge import ensure_schema, import_segments, rebuild_model_styling_knowledge, rebuild_pattern_knowledge, search_segments, search_model_styling, search_pattern_knowledge, format_context, recommend_design, audit_design, format_decision_package
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
@@ -21,9 +21,25 @@ from PySide6.QtWidgets import (
 
 APP_NAME = "秀场礼服设计工作台"
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", ROOT))
 CONFIG_PATH = ROOT / "config.json"
 DB_PATH = ROOT / "show_gown_studio.db"
-TRAINING_DATA_PATH = Path(os.getenv("DRESS_TRAINING_DATA", ROOT / "data" / "dress_training" / "segments.jsonl"))
+TRAINING_DATA_PATH = Path(os.getenv("DRESS_TRAINING_DATA", ROOT / "data" / "dress_training" / "segments_all.jsonl"))
+
+
+def bootstrap_runtime_files():
+    """Copy read-only PyInstaller resources beside the EXE for a writable local workspace."""
+    if not getattr(sys, "frozen", False):
+        return
+    for relative in (Path("show_gown_studio.db"), Path("data") / "dress_training" / "segments_all.jsonl"):
+        target = ROOT / relative
+        source = RESOURCE_ROOT / relative
+        if not target.exists() and source.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+
+
+bootstrap_runtime_files()
 
 
 def default_config():
@@ -104,6 +120,13 @@ class ProjectDB:
                 created_at TEXT NOT NULL,
                 PRIMARY KEY(project_id, segment_id)
             );
+            CREATE TABLE IF NOT EXISTS project_pattern_links (
+                project_id INTEGER NOT NULL,
+                knowledge_id TEXT NOT NULL,
+                rank INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(project_id, knowledge_id)
+            );
             CREATE TABLE IF NOT EXISTS project_decision_audits (
                 project_id INTEGER PRIMARY KEY,
                 recommendations_json TEXT NOT NULL,
@@ -120,8 +143,9 @@ class ProjectDB:
             """)
             ensure_schema(c)
             rebuild_model_styling_knowledge(c)
+            rebuild_pattern_knowledge(c)
 
-    def save(self, data, references, knowledge_matches=None, recommendations=None, audit=None):
+    def save(self, data, references, knowledge_matches=None, recommendations=None, audit=None, pattern_matches=None):
         now = datetime.now().isoformat(timespec="seconds")
         with self.connect() as c:
             cursor = c.execute("INSERT INTO projects(name,created_at,updated_at,analysis_json,design_plan,parameters_json,notes) VALUES(?,?,?,?,?,?,?)", (
@@ -131,6 +155,8 @@ class ProjectDB:
                 c.execute("INSERT INTO reference_assets(project_id,path,label,created_at) VALUES(?,?,?,?)", (project_id, path, Path(path).name, now))
             for rank, row in enumerate(knowledge_matches or [], start=1):
                 c.execute("INSERT OR REPLACE INTO project_knowledge_links(project_id,segment_id,rank,created_at) VALUES(?,?,?,?)", (project_id, row["id"], rank, now))
+            for rank, row in enumerate(pattern_matches or [], start=1):
+                c.execute("INSERT OR REPLACE INTO project_pattern_links(project_id,knowledge_id,rank,created_at) VALUES(?,?,?,?)", (project_id, row["knowledge_id"], rank, now))
             if recommendations is not None or audit is not None:
                 c.execute("INSERT OR REPLACE INTO project_decision_audits(project_id,recommendations_json,audit_json,created_at) VALUES(?,?,?,?)", (project_id, json.dumps(recommendations or {}, ensure_ascii=False), json.dumps(audit or {}, ensure_ascii=False), now))
             return project_id
@@ -153,6 +179,10 @@ class ProjectDB:
         with self.connect() as c:
             rotation_index = c.execute("SELECT COUNT(*) FROM generation_runs").fetchone()[0]
             return search_model_styling(c, query, recommendations, rotation_index=rotation_index, limit=limit)
+
+    def search_pattern_knowledge(self, query, limit=8):
+        with self.connect() as c:
+            return search_pattern_knowledge(c, query, limit=limit)
 
 
 class ApiWorker(QThread):
@@ -255,6 +285,7 @@ class MainWindow(QMainWindow):
         self.design_recommendations = {}
         self.design_audit = {}
         self.model_styling_decision = {}
+        self.pattern_matches = []
         self.current_project_id = None
         self.references = []
         self.analysis = {}
@@ -406,19 +437,36 @@ class MainWindow(QMainWindow):
     def refresh_knowledge_context(self):
         query = " ".join([self.analysis_output.toPlainText(), self.keywords.toPlainText(), self.brief_input.toPlainText()])
         self.knowledge_matches = self.db.search_dress_knowledge(query, limit=8)
+        self.pattern_matches = self.db.search_pattern_knowledge(query, limit=8)
         context = format_context(self.knowledge_matches) if self.knowledge_matches else "本地礼服知识库暂无匹配记录；请基于通用服装设计原则完成方案。"
         self.design_recommendations = recommend_design(self.knowledge_matches, query)
         self.model_styling_decision = self.db.search_model_styling(query, self.design_recommendations, limit=8)
         self.design_recommendations["model_styling_decision"] = self.model_styling_decision
+        self.design_recommendations["pattern_decision"] = {
+            "status": "selected_from_database" if self.pattern_matches else "no_database_evidence",
+            "decision_source": "SQLite pattern_knowledge",
+            "evidence_ids": [row["knowledge_id"] for row in self.pattern_matches],
+            "source_pages": [f"{row['book_id']} p.{row['page']}" for row in self.pattern_matches],
+            "seam_lines": [row["seam_lines"] for row in self.pattern_matches if row["seam_lines"]][:6],
+            "darts": [row["darts"] for row in self.pattern_matches if row["darts"]][:6],
+            "panels": [row["panels"] for row in self.pattern_matches if row["panels"]][:6],
+            "layers": [row["layers"] for row in self.pattern_matches if row["layers"]][:6],
+            "draping_clues": [row["draping_clues"] for row in self.pattern_matches if row["draping_clues"]][:6],
+            "ease_clues": [row["ease_clues"] for row in self.pattern_matches if row["ease_clues"]][:6],
+            "validation": [row["validation"] for row in self.pattern_matches if row["validation"]][:6],
+            "risk": [row["risk"] for row in self.pattern_matches if row["risk"]][:6],
+            "must_review_with_patternmaker": True,
+        }
         self.design_audit = audit_design(self.parameters(), self.design_recommendations)
         decision_text = format_decision_package(self.design_recommendations, self.design_audit)
         if hasattr(self, "knowledge_output"):
             self.knowledge_output.setPlainText(decision_text + "\n\n【来源证据】\n" + context)
         if hasattr(self, "knowledge_status"):
-            self.knowledge_status.setText(f"知识库链路：已命中 {len(self.knowledge_matches)} 条，方案生成将使用这些候选记录")
-        self.append_log(f"礼服知识库检索：命中 {len(self.knowledge_matches)} 条候选记录")
+            self.knowledge_status.setText(f"知识库链路：已命中礼服 {len(self.knowledge_matches)} 条 · 纸样 {len(self.pattern_matches)} 条 · 模特造型已接管")
+        self.append_log(f"数据库决策：礼服={len(self.knowledge_matches)}，纸样={len(self.pattern_matches)}，模特造型=1")
         styling_text = "\n数据库模特造型决策：\n" + json.dumps(self.model_styling_decision, ensure_ascii=False, indent=2)
-        return context + styling_text + "\n结构化设计决策包：\n" + decision_text
+        pattern_text = "\n数据库纸样决策证据：\n" + json.dumps(self.design_recommendations.get("pattern_decision", {}), ensure_ascii=False, indent=2)
+        return context + styling_text + pattern_text + "\n结构化设计决策包：\n" + decision_text
 
     def plan_done(self, result, error, ok):
         self.plan_btn.setEnabled(True); self.plan_btn.setText("生成 AI 设计方案")
@@ -440,12 +488,15 @@ class MainWindow(QMainWindow):
         return {"project_name": self.project_name.text(), "analysis": self.analysis, "design_plan": self.plan_output.toPlainText(), "parameters": self.parameters(), "notes": self.work_notes.toPlainText()}
 
     def image_prompt(self):
-        d = self.collect_data(); styling = json.dumps(self.model_styling_decision, ensure_ascii=False, indent=2); acceptance = json.dumps(self.model_styling_decision.get("database_acceptance", {}), ensure_ascii=False, indent=2); return f"高级时装秀场礼服效果图。项目：{d['project_name']}。参考图识别摘要：{self.analysis_output.toPlainText()}。AI 设计方案：{d['design_plan']}。最终确认工作台参数：{json.dumps(d['parameters'], ensure_ascii=False)}。数据库设计决策包：{format_decision_package(self.design_recommendations, self.design_audit)}。数据库模特造型决策：{styling}。数据库图片验收硬约束：{acceptance}。灵感关键词：{self.keywords.toPlainText()}。补充要求：{self.image_extra.toPlainText()}。必须是中国成年女性真人时装摄影感，严格遵守数据库选择的发型、头饰、表情、视线、姿态与动态；必须让数据库验收条件在画面中清晰可见，不得用与数据库指定姿态不一致的正面静态站姿替代；面部自然有轻微不对称，真实皮肤纹理和毛孔，真实眼神、手部和身体比例，妆容克制并与礼服风格协调；避免塑料皮肤、蜡像脸、过度磨皮、诡异眼神、僵硬表情、重复脸、AI伪影。请生成全身专业时装视觉，完整表现礼服结构、比例、面料层次、工艺细节、秀场灯光和全身造型；遵守审查风险并避免不安全结构；不要文字、不要水印、不要品牌标识。"
+        d = self.collect_data(); styling = json.dumps(self.model_styling_decision, ensure_ascii=False, indent=2); pattern = json.dumps(self.design_recommendations.get("pattern_decision", {}), ensure_ascii=False, indent=2); acceptance = json.dumps(self.model_styling_decision.get("database_acceptance", {}), ensure_ascii=False, indent=2); return f"高级时装秀场礼服效果图。项目：{d['project_name']}。参考图识别摘要：{self.analysis_output.toPlainText()}。AI 设计方案：{d['design_plan']}。最终确认工作台参数：{json.dumps(d['parameters'], ensure_ascii=False)}。数据库设计决策包：{format_decision_package(self.design_recommendations, self.design_audit)}。数据库模特造型决策：{styling}。数据库纸样决策证据：{pattern}。数据库图片验收硬约束：{acceptance}。灵感关键词：{self.keywords.toPlainText()}。补充要求：{self.image_extra.toPlainText()}。必须是中国成年女性真人时装摄影感，严格遵守数据库选择的发型、头饰、表情、视线、姿态与动态；必须让数据库验收条件在画面中清晰可见，不得用与数据库指定姿态不一致的正面静态站姿替代；面部自然有轻微不对称，真实皮肤纹理和毛孔，真实眼神、手部和身体比例，妆容克制并与礼服风格协调；避免塑料皮肤、蜡像脸、过度磨皮、诡异眼神、僵硬表情、重复脸、AI伪影。请生成全身专业时装视觉，完整表现礼服结构、比例、面料层次、工艺细节、秀场灯光和全身造型；遵守审查风险并避免不安全结构；不要文字、不要水印、不要品牌标识。"
 
     def generate_image(self):
         self.refresh_knowledge_context()
         self.refresh_parameter_json()
         if not self.plan_output.toPlainText().strip(): QMessageBox.warning(self, "尚未完成第二步", "请先生成或填写 AI 设计方案。"); self.tabs.setCurrentIndex(1); return
+        if not self.pattern_matches:
+            QMessageBox.warning(self, "纸样证据未命中", "当前设计没有命中数据库纸样证据，不能进入图片生成。请补充廓形、面料、分割线或纸样关键词后重新检索。")
+            self.tabs.setCurrentIndex(1); return
         if not self.config.get("api_key"): QMessageBox.warning(self, "缺少 API Key", "请先在接口设置中填写 API Key。"); self.tabs.setCurrentIndex(4); return
         self._last_image_prompt = self.image_prompt(); payload = {"prompt": self._last_image_prompt, "references": self.references, "size": self.image_size.currentText(), "quality": self.image_quality.currentText()}; self.generate_btn.setEnabled(False); self.generate_btn.setText("API 生成中，最长等待 180 秒……"); self.save_image_btn.setEnabled(False); self.save_settings_silent(); self.append_log(f"准备图片请求：模型={self.config.get('image_model')}，参考图数量={len(self.references)}"); self.worker = ApiWorker(self.config, "image", payload); self.worker.log.connect(self.append_log); self.worker.done.connect(self.image_done); self.worker.start()
 
@@ -457,13 +508,13 @@ class MainWindow(QMainWindow):
     def save_generated_image(self):
         if not self.generated_bytes: return
         path, _ = QFileDialog.getSaveFileName(self, "保存 API 原图", "gown_api_generated.png", "PNG (*.png);;JPEG (*.jpg);;WEBP (*.webp)")
-        if path: Path(path).write_bytes(self.generated_bytes); self.db.record_generation(self.current_project_id, self.config.get("image_model", "gpt-image-2.5"), self._last_image_prompt or self.image_prompt(), path, {"recommendations": self.design_recommendations, "audit": self.design_audit}, [row["id"] for row in self.knowledge_matches]); self.status.setText(f"已保存 API 原图 · {Path(path).name}")
+        if path: Path(path).write_bytes(self.generated_bytes); self.db.record_generation(self.current_project_id, self.config.get("image_model", "gpt-image-2.5"), self._last_image_prompt or self.image_prompt(), path, {"recommendations": self.design_recommendations, "audit": self.design_audit}, [row["id"] for row in self.knowledge_matches] + [row["knowledge_id"] for row in self.pattern_matches]); self.status.setText(f"已保存 API 原图 · {Path(path).name}")
 
     def test_text_api(self):
         self.start_chat([{"role": "user", "content": "只回复：文字 API 连接正常"}], lambda result, error, ok: (QMessageBox.information(self, "测试结果", result if ok else error)))
 
     def save_project(self):
-        self.refresh_parameter_json(); project_id = self.db.save(self.collect_data(), self.references, self.knowledge_matches, self.design_recommendations, self.design_audit); self.current_project_id = project_id; self.status.setText(f"已保存到 SQLite · 项目 {project_id} · 知识库关联 {len(self.knowledge_matches)} 条 · 风险 {self.design_audit.get('risk_count', 0)} 项"); QMessageBox.information(self, "已保存", f"项目已保存到本地数据库：{DB_PATH.name}\n项目编号：{project_id}\n知识库关联：{len(self.knowledge_matches)} 条\n审查风险：{self.design_audit.get('risk_count', 0)} 项")
+        self.refresh_parameter_json(); project_id = self.db.save(self.collect_data(), self.references, self.knowledge_matches, self.design_recommendations, self.design_audit, self.pattern_matches); self.current_project_id = project_id; self.status.setText(f"已保存到 SQLite · 项目 {project_id} · 礼服证据 {len(self.knowledge_matches)} 条 · 纸样证据 {len(self.pattern_matches)} 条 · 风险 {self.design_audit.get('risk_count', 0)} 项"); QMessageBox.information(self, "已保存", f"项目已保存到本地数据库：{DB_PATH.name}\n项目编号：{project_id}\n礼服证据：{len(self.knowledge_matches)} 条\n纸样证据：{len(self.pattern_matches)} 条\n审查风险：{self.design_audit.get('risk_count', 0)} 项")
 
     def export_brief(self):
         path, _ = QFileDialog.getSaveFileName(self, "导出设计单", "show_gown_design_brief.html", "HTML (*.html);;Markdown (*.md)")
