@@ -50,6 +50,7 @@ def default_config():
         "text_model": "deepseek-v4.1-flash",
         "image_model": "gpt-image-2.5",
         "timeout_seconds": 180,
+        "image_timeout_seconds": 360,
         "dress_training_data": str(TRAINING_DATA_PATH),
     }
 
@@ -201,7 +202,8 @@ class ApiWorker(QThread):
             self.done.emit(result, "", True)
         except requests.exceptions.ReadTimeout:
             self.log.emit("错误：读取超时，服务端在规定时间内未返回")
-            self.done.emit(None, "API 在规定时间内未返回。图片生成允许等待 180 秒；多模态分析建议检查模型和网络。", False)
+            image_wait = int(self.config.get("image_timeout_seconds", 360))
+            self.done.emit(None, f"API 在规定时间内未返回。图片生成允许等待 {image_wait} 秒；请检查模型、网络和 API 日志。", False)
         except requests.exceptions.HTTPError as e:
             detail = e.response.text[:2000] if e.response is not None else str(e)
             status = e.response.status_code if e.response is not None else "未知"
@@ -219,7 +221,7 @@ class ApiWorker(QThread):
 
     def call_api(self):
         base = self.config["api_base_url"].rstrip("/")
-        timeout = int(self.config.get("timeout_seconds", 180))
+        timeout = int(self.config.get("image_timeout_seconds", 360) if self.operation == "image" else self.config.get("timeout_seconds", 180))
         if self.operation == "chat":
             self.log.emit(f"请求端点：{base}/chat/completions")
             self.log.emit(f"请求模型：{self.payload.get('model')}，消息数={len(self.payload.get('messages', []))}")

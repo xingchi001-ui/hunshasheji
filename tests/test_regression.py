@@ -61,6 +61,7 @@ assert "数据库模特造型决策" in context
 assert "数据库纸样决策证据" in context
 assert win.design_recommendations["pattern_decision"]["decision_source"] == "SQLite pattern_knowledge"
 assert len(win.pattern_matches) > 0
+assert win.config["image_timeout_seconds"] == 360
 assert "数据库图片验收硬约束" in win.image_prompt()
 assert "不得用与数据库指定姿态不一致的正面静态站姿替代" in win.image_prompt()
 assert win.design_recommendations["evidence_count"] > 0
@@ -69,6 +70,7 @@ audit = audit_design({"silhouette": "鱼尾", "train": "超长拖尾", "craft": 
 assert audit["risk_count"] >= 3
 assert "preflight_audit" in format_decision_package(win.design_recommendations, audit)
 assert "gpt-image-2.5" in default_config()["image_model"]
+assert default_config()["image_timeout_seconds"] == 360
 
 with tempfile.TemporaryDirectory() as td:
     # Original bytes are read for API transport only; no image decoding or processing.

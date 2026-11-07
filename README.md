@@ -60,6 +60,8 @@ data/dress_training/failed_pages.jsonl      # 尚未成功分析的页面清单
 
 图片生成前还会建立 `database_acceptance` 硬验收条件，列出必须在画面中出现的礼服、发饰、姿态和动态证据；图片提示词明确禁止用与数据库指定姿态不一致的正面静态站姿替代。回归测试要求硬验收字段、来源证据和拒绝条件全部存在后才允许进入图片 API。
 
+图片接口使用独立的 `image_timeout_seconds=360`，不再与文字/视觉接口共用 180 秒超时；错误提示会显示实际等待上限。项目 `ApiWorker` 已真实调用 `gpt-image-2.5`，低质量 1024 方图返回约 1.3–1.9 MB 原图，单次测试约 31–35 秒。生成成功后还要经过 MiniMax-M3 图片硬验收，API 成功不等于数据库设计约束满分。
+
 ### 《婚纱礼服100款》纸样基础层
 
 新增 `data/dress_training/segments_hunshasheji100.jsonl` 共 217 页，使用 MiniMax-M3 逐页视觉理解，未做 OCR。除原有礼服设计字段外，每页还记录 `pattern_seam_lines`（分割线）、`pattern_darts`（省道）、`pattern_panels`（拼片）、`pattern_layers`（层级）、`pattern_draping_clues`（立体裁剪线索）、`pattern_ease_clues`（放量线索）、`pattern_material_relation`（面料结构关系）、`pattern_process`（纸样工艺顺序）、`pattern_validation`（验证项目）和 `pattern_risk`（纸样风险）。
